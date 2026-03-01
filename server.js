@@ -1,641 +1,713 @@
 const http = require('http');
-const https = require('https');
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://yuzlfocqovwhqdpitvxj.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1emxmb2Nxb3Z3aHFkcGl0dnhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIyODE3OTgsImV4cCI6MjA4Nzg1Nzc5OH0.zN_GOXI8MI9isqnVRCZvxAmU1ZyXIfWvq-P3SkSh4Vk';
 
-// ── Supabase helpers ──────────────────────────────────────────────────────────
-function supabaseRequest(method, path, body) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(`${SUPABASE_URL}/rest/v1${path}`);
-    const data = body ? JSON.stringify(body) : null;
-
-    const options = {
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Prefer': 'return=representation'
-      }
-    };
-    if (data) options.headers['Content-Length'] = Buffer.byteLength(data);
-
-    const req = https.request(options, res => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => {
-        try { resolve({ status: res.statusCode, data: JSON.parse(d) }); }
-        catch { resolve({ status: res.statusCode, data: d }); }
-      });
-    });
-    req.on('error', reject);
-    if (data) req.write(data);
-    req.end();
-  });
-}
-
-async function searchDocs(query) {
-  // Simple text search across all document chunks
-  const result = await supabaseRequest('GET',
-    `/documents?select=filename,content&content=ilike.*${encodeURIComponent(query.slice(0, 50))}*&limit=5`
-  );
-  if (result.status === 200 && Array.isArray(result.data)) {
-    return result.data;
-  }
-  // Fallback: get all docs (for small knowledge bases)
-  const all = await supabaseRequest('GET', '/documents?select=filename,content&limit=20');
-  return all.status === 200 ? all.data : [];
-}
-
-async function saveChunks(filename, chunks) {
-  const rows = chunks.map((content, i) => ({ filename, content, chunk_index: i }));
-  return supabaseRequest('POST', '/documents', rows);
-}
-
-async function listFiles() {
-  const result = await supabaseRequest('GET',
-    '/documents?select=filename,created_at&order=created_at.desc'
-  );
-  if (result.status !== 200) return [];
-  // Deduplicate by filename
-  const seen = new Set();
-  return result.data.filter(r => {
-    if (seen.has(r.filename)) return false;
-    seen.add(r.filename);
-    return true;
-  });
-}
-
-async function deleteFile(filename) {
-  return supabaseRequest('DELETE', `/documents?filename=eq.${encodeURIComponent(filename)}`);
-}
-
-// ── Text chunking ─────────────────────────────────────────────────────────────
-function chunkText(text, size = 800, overlap = 100) {
-  const clean = text.replace(/\s+/g, ' ').trim();
-  const chunks = [];
-  let i = 0;
-  while (i < clean.length) {
-    chunks.push(clean.slice(i, i + size));
-    i += size - overlap;
-  }
-  return chunks.filter(c => c.trim().length > 50);
-}
-
-// ── Static knowledge base (fallback) ─────────────────────────────────────────
-const BASE_KNOWLEDGE = `
+const KNOWLEDGE_BASE = `
 === EPOS TROUBLESHOOTING ===
-EPOS SYSTEM CRASHES: Restart resolves 70% of issues. Close open bills first. Soft restart via settings. Hard reset: hold power 10 seconds. Wait 2-3 mins on restart. Check for pending updates.
-EPOS WON'T CONNECT: Check ethernet cable. For WiFi: forget and reconnect. Assign static IP in router settings.
-RECEIPT PRINTER NOT PRINTING: Check thermal paper orientation (shiny side to print head). Test print from printer button. Check IP/port in EPOS settings.
-EPOS RUNNING SLOWLY: Clear cache in settings. Check storage (need 10%+ free). Close background apps. Need 10Mbps+ for cloud EPOS.
-STAFF LOGIN ISSUES: Reset PIN in back office. Check account is active. Manager lockout: check setup email for master PIN.
-KDS NOT RECEIVING ORDERS: Check physical connection. Verify routing rules in back office. Restart both EPOS and KDS.
 
-=== WIFI & CONNECTIVITY ===
-WIFI DROPPING: Check if one device or all. Restart router (unplug 30 secs). Use 5GHz for critical systems. Check for microwave/interference.
-EPOS LOSING WIFI: Assign static IPs to all critical devices via DHCP reservation in router admin.
-SLOW INTERNET: Need 10Mbps min for cloud POS. Separate guest WiFi from business network. Consider 4G failover.
+SYSTEM CRASH / FROZEN SCREEN:
+- Force close: Hold power button 10 seconds, then restart
+- If touchscreen unresponsive: unplug power, wait 30 seconds, replug
+- Check if crash is affecting all terminals or just one
+- Single terminal frozen: usually software — try restarting just that unit
+- All terminals down: likely network or server issue — check internet first
+- After restart, check if transactions from last 15 mins are saved — most modern EPOS auto-saves
+
+EPOS NOT CONNECTING TO KITCHEN/BAR PRINTER:
+- Check physical cable connections at both ends first
+- Restart the printer (power off, 10 seconds, power on)
+- Check EPOS settings → Printer → ensure IP address matches printer's actual IP
+- Common mistake: printer IP changes after router restart — set printer to static IP
+- Most EPOS printers: hold feed button on startup to print config sheet with current IP
+- If wireless printer: check it's on same WiFi network as terminals
+
+EPOS RUNNING SLOWLY:
+- Close unused browser tabs if browser-based EPOS
+- Check internet speed: fast.com — if below 10Mbps, call your ISP
+- Free up disk space: most EPOS need at least 10% free storage to run well
+- Check if slowdown is same time daily — could be scheduled updates or backups
+- Restart the terminal — often fixes memory leak issues
+
+LOGIN ISSUES:
+- Try another staff member's login first to isolate if it's user-specific or system-wide
+- Password reset: usually in back office → staff management → reset PIN
+- If entire system locked: check with manager for admin override code
+- Some systems lock after 5 failed attempts — wait 15 minutes or contact vendor
+
+CARD PAYMENT NOT GOING THROUGH EPOS:
+- Check payment terminal is connected (Bluetooth or cable) to EPOS
+- Restart both EPOS and payment terminal
+- If integrated payments: call your PSP (payment service provider) not EPOS vendor
+- Split responsibility: EPOS vendor handles software, PSP handles transactions
+
+=== WIFI / CONNECTIVITY ===
+
+COMPLETE WIFI OUTAGE:
+- Check router lights: solid green/blue = working, flashing red = issue
+- Restart router: unplug, wait 60 seconds, plug back in — takes 2-3 minutes
+- Check if issue is WiFi or broadband: plug laptop directly into router with cable
+  - If cable works but WiFi doesn't: WiFi router problem
+  - If neither works: broadband issue — call ISP
+- Business broadband SLAs: BT Business 0800 800 150, Virgin Business 0345 454 1111
+
+EPOS ON WIFI KEEPS DROPPING:
+- EPOS systems should be on wired connection or dedicated VLAN — never shared guest WiFi
+- Set EPOS terminals to static IP addresses to prevent reconnection drops
+- Check if issue correlates with busy periods — guest WiFi congestion affecting EPOS
+- Consider separate router for EPOS systems only — around £80-150 one-off cost
+- Channel congestion: use a WiFi analyser app to check if neighbours are on same channel
+
+SLOW INTERNET DURING SERVICE:
+- Guest WiFi and EPOS must be on separate networks — configure VLAN or use two routers
+- Check your broadband package: most hospitality needs minimum 50Mbps
+- Consider 4G/5G backup SIM router (Cradlepoint, Peplink) — pays for itself in avoided downtime
 
 === PAYMENT TERMINALS ===
-TERMINAL OFFLINE: Check SIM/WiFi connection. Restart terminal (hold power 5 secs). Run Connection Test in settings.
-CARD DECLINES: Try different card. Check terminal date/time. Verify merchant account active.
-CONTACTLESS NOT WORKING: Check £100 limit. Settings > Contactless > Reset.
-TERMINAL/EPOS NOT INTEGRATING: Same network/subnet required. Check IP config in EPOS payment settings. Restart both.
 
-=== GENERAL ===
-BEFORE CALLING SUPPORT: Document error message. Try restart. Check if one device or all. Check internet. Check vendor status page.
-RESILIENCE: Keep manual backup process. Save payment provider emergency number. Have 4G hotspot backup.
+TERMINAL OFFLINE / NOT PROCESSING:
+- Check for WiFi signal on terminal screen — reconnect if needed
+- If terminal has mobile data backup, confirm it switches automatically
+- Full restart: hold power button until it powers off completely, wait 10 seconds
+- If using ethernet: check cable and switch port
+- Contact your PSP (not your EPOS vendor) for transaction issues
+  - Worldpay: 0330 333 3967
+  - SumUp: support in app or 020 3510 0160
+  - Square: support.squareup.com/en/gb
+  - Stripe: 0800 041 8604
+  - iZettle/Zettle: 020 3455 0690
+
+CONTACTLESS NOT WORKING:
+- Ask customer to try chip and PIN instead while you troubleshoot
+- Clean the contactless reader with dry cloth — oils and dust cause issues
+- Update terminal firmware: usually Settings → Software Update
+- Some cards have contactless limits set by the bank — not a terminal issue
+- Check contactless limit on your terminal (UK standard is £100)
+
+TERMINAL TAKING TOO LONG TO PROCESS:
+- Usually a connectivity issue — check signal strength on terminal
+- Peak times: some PSPs have slower processing — call them if persistent
+- Check if other terminals are affected — isolates to single unit vs system
+
+=== GENERAL BEST PRACTICE ===
+
+BEFORE SERVICE CHECKLIST:
+- Test one full transaction on your quietest terminal
+- Check kitchen/bar printers are printing test pages
+- Confirm WiFi password hasn't changed overnight
+- Check last night's Z-reading is complete so totals start fresh
+
+WHEN SOMETHING GOES WRONG:
+- Stay calm — most issues have a fix and your team is watching you
+- Manual fallback: keep a paper pad and pen, take card details on phone if needed
+- Document the issue: screenshot error messages, note exact time
+- Most EPOS vendors have 24/7 support lines — put them in your phone now
+
+VENDOR SUPPORT CONTACTS:
+- Lightspeed: 0800 848 6688
+- Square for Restaurants: support.squareup.com/en/gb
+- Zonal: 0131 311 8000
+- EPOS Now: 020 3744 0140
+- Tevalis: 01788 511 100
+- Vita Mojo: support@vitamojo.com
+- Yoello: support@yoello.com
+- Nutritics: support@nutritics.com
+
+ESCALATION PATH:
+1. Restart the affected device
+2. Check internet connection
+3. Try vendor's self-service troubleshooting portal
+4. Call vendor support (have your account number ready)
+5. If no resolution: escalate to account manager
 `;
 
-// ── Anthropic call ────────────────────────────────────────────────────────────
-function callAnthropic(messages, systemPrompt) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages
-    });
-
+// ─── SUPABASE HELPERS ─────────────────────────────────────────────
+async function sbFetch(path, opts = {}) {
+  const https = require('https');
+  const url = new URL(`${SUPABASE_URL}${path}`);
+  const body = opts.body ? JSON.stringify(opts.body) : null;
+  const headers = {
+    'apikey': SUPABASE_KEY,
+    'Authorization': `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+    ...opts.headers
+  };
+  return new Promise((res, rej) => {
     const req = https.request({
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-        'Content-Length': Buffer.byteLength(data)
-      }
-    }, res => {
+      hostname: url.hostname, path: url.pathname + url.search,
+      method: opts.method || 'GET', headers
+    }, (r) => {
       let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => resolve({ status: res.statusCode, data: JSON.parse(d) }));
+      r.on('data', c => d += c);
+      r.on('end', () => {
+        try { res({ status: r.statusCode, data: JSON.parse(d || '[]') }); }
+        catch { res({ status: r.statusCode, data: d }); }
+      });
     });
-    req.on('error', reject);
-    req.write(data);
+    req.on('error', rej);
+    if (body) req.write(body);
     req.end();
   });
 }
 
-// ── Multipart parser ──────────────────────────────────────────────────────────
-function parseMultipart(buffer, boundary) {
-  const parts = [];
-  const boundaryBuf = Buffer.from('--' + boundary);
-  let start = 0;
+async function getAnalytics() {
+  try {
+    const [leadsR, convsR, ticketsR, docsR] = await Promise.all([
+      sbFetch('/rest/v1/leads?select=count', { headers: { 'Prefer': 'count=exact', 'Range': '0-0' } }),
+      sbFetch('/rest/v1/conversations?select=messages,created_at&order=created_at.desc&limit=200'),
+      sbFetch('/rest/v1/tickets?select=id,email,name,venue,issue,status,created_at&order=created_at.desc&limit=50'),
+      sbFetch('/rest/v1/documents?select=id,filename,created_at&order=created_at.desc&limit=100'),
+    ]);
 
-  while (start < buffer.length) {
-    const boundaryIdx = buffer.indexOf(boundaryBuf, start);
-    if (boundaryIdx === -1) break;
-    const headerStart = boundaryIdx + boundaryBuf.length + 2;
-    const headerEnd = buffer.indexOf('\r\n\r\n', headerStart);
-    if (headerEnd === -1) break;
-    const headers = buffer.slice(headerStart, headerEnd).toString();
-    const dataStart = headerEnd + 4;
-    const nextBoundary = buffer.indexOf(boundaryBuf, dataStart);
-    if (nextBoundary === -1) break;
-    const dataEnd = nextBoundary - 2;
-    const data = buffer.slice(dataStart, dataEnd);
+    const convs = Array.isArray(convsR.data) ? convsR.data : [];
+    const tickets = Array.isArray(ticketsR.data) ? ticketsR.data : [];
+    const docs = Array.isArray(docsR.data) ? docsR.data : [];
 
-    const nameMatch = headers.match(/name="([^"]+)"/);
-    const filenameMatch = headers.match(/filename="([^"]+)"/);
-    if (nameMatch) {
-      parts.push({
-        name: nameMatch[1],
-        filename: filenameMatch ? filenameMatch[1] : null,
-        data
+    // Extract all user messages for topic analysis
+    const allMessages = [];
+    convs.forEach(c => {
+      if (c.messages && Array.isArray(c.messages)) {
+        c.messages.filter(m => m.role === 'user').forEach(m => allMessages.push(m.content.toLowerCase()));
+      }
+    });
+
+    // Topic frequency analysis
+    const topicKeywords = {
+      'EPOS / Till system': ['epos','till','pos','register','touchscreen','terminal crashed','system down'],
+      'Payment terminals': ['payment','card','contactless','worldpay','sumup','square','stripe','zettle'],
+      'WiFi / Network': ['wifi','wi-fi','internet','network','broadband','connectivity','offline'],
+      'Kitchen printers': ['kitchen','printer','kds','order not printing','print'],
+      'Login / Access': ['login','log in','password','pin','access','locked out'],
+      'Slow performance': ['slow','lagging','freezing','frozen','unresponsive'],
+      'Bookings / Reservations': ['booking','reservation','resy','opentable','sevenrooms'],
+      'Payroll / HR': ['payroll','hr','rota','deputy','rotaready','workforce'],
+    };
+
+    const topicCounts = {};
+    Object.keys(topicKeywords).forEach(topic => {
+      topicCounts[topic] = 0;
+      allMessages.forEach(msg => {
+        if (topicKeywords[topic].some(kw => msg.includes(kw))) topicCounts[topic]++;
       });
-    }
-    start = nextBoundary;
+    });
+
+    // Product/vendor mentions
+    const vendors = ['lightspeed','square','zonal','epos now','tevalis','vita mojo','yoello','worldpay','sumup','stripe','zettle','deputy','rotaready','sevenrooms','opentable','resy','nutritics','harbortouch','toast pos'];
+    const vendorCounts = {};
+    vendors.forEach(v => {
+      vendorCounts[v] = allMessages.filter(m => m.includes(v)).length;
+    });
+
+    const topTopics = Object.entries(topicCounts).sort((a,b) => b[1]-a[1]).filter(([,c]) => c > 0);
+    const topVendors = Object.entries(vendorCounts).sort((a,b) => b[1]-a[1]).filter(([,c]) => c > 0);
+
+    return {
+      totalConvs: convs.length,
+      totalMessages: allMessages.length,
+      openTickets: tickets.filter(t => t.status === 'open').length,
+      totalDocs: docs.length,
+      topTopics,
+      topVendors,
+      recentConvs: convs.slice(0, 10),
+      tickets,
+      docs
+    };
+  } catch(e) {
+    console.error('Analytics error:', e);
+    return { error: e.message };
   }
-  return parts;
 }
 
-// ── Simple PDF/text extractor ─────────────────────────────────────────────────
-function extractText(buffer, filename) {
-  const ext = filename.split('.').pop().toLowerCase();
-  if (ext === 'txt' || ext === 'md') {
-    return buffer.toString('utf8');
-  }
-  if (ext === 'pdf') {
-    // Extract readable text from PDF (basic string extraction)
-    const str = buffer.toString('latin1');
-    const texts = [];
-    const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-    let match;
-    while ((match = streamRegex.exec(str)) !== null) {
-      const chunk = match[1];
-      // Extract text between parentheses (PDF text operators)
-      const textRegex = /\(([^)]{2,200})\)/g;
-      let tm;
-      while ((tm = textRegex.exec(chunk)) !== null) {
-        const t = tm[1].replace(/\\n/g, ' ').replace(/\\r/g, ' ').replace(/\\\\/g, '\\').trim();
-        if (t.length > 3 && /[a-zA-Z]{2,}/.test(t)) texts.push(t);
-      }
-    }
-    return texts.join(' ');
-  }
-  // For .doc/.docx — extract any readable text
-  return buffer.toString('utf8').replace(/[^\x20-\x7E\n]/g, ' ').replace(/\s+/g, ' ');
-}
-
-// ── HTTP Server ───────────────────────────────────────────────────────────────
-const server = http.createServer(async (req, res) => {
-  const cors = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  };
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200, cors);
-    res.end();
-    return;
-  }
-
-  const json = (status, data) => {
-    res.writeHead(status, { ...cors, 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(data));
-  };
-
-  const html = (status, content) => {
-    res.writeHead(status, { ...cors, 'Content-Type': 'text/html' });
-    res.end(content);
-  };
-
-  // Health check
-  if (req.method === 'GET' && req.url === '/health') {
-    return json(200, { status: 'ok' });
-  }
-
-  // List uploaded files
-  if (req.method === 'GET' && req.url === '/files') {
-    const files = await listFiles();
-    return json(200, files);
-  }
-
-  // Delete a file
-  if (req.method === 'DELETE' && req.url.startsWith('/files/')) {
-    const filename = decodeURIComponent(req.url.replace('/files/', ''));
-    await deleteFile(filename);
-    return json(200, { deleted: filename });
-  }
-
-  // Chat endpoint
-  if (req.method === 'POST' && req.url === '/chat') {
-    let body = '';
-    req.on('data', c => body += c);
-    req.on('end', async () => {
-      try {
-        const { messages } = JSON.parse(body);
-        const lastMsg = messages[messages.length - 1]?.content || '';
-
-        // Search uploaded docs
-        const docResults = await searchDocs(lastMsg);
-        const docContext = docResults.length > 0
-          ? '\n\n=== UPLOADED KNOWLEDGE BASE ===\n' + docResults.map(d => `[${d.filename}]: ${d.content}`).join('\n\n')
-          : '';
-
-        const systemPrompt = `You are the Tech on Toast Operator Support Bot — a knowledgeable, straight-talking assistant for hospitality operators having tech problems.
-
-Be direct, practical and reassuring. Use the knowledge base below to answer. If you use uploaded documents, mention the filename as the source.
-
-FORMAT: Numbered steps for sequences. Bold key terms with **bold**. End with "Sources: [section names]".
-
-KNOWLEDGE BASE:
-${BASE_KNOWLEDGE}${docContext}`;
-
-        const result = await callAnthropic(messages.slice(-10), systemPrompt);
-        if (result.status !== 200) return json(result.status, { error: result.data.error?.message });
-        json(200, { content: result.data.content[0].text });
-      } catch (err) {
-        json(500, { error: err.message });
-      }
-    });
-    return;
-  }
-
-  // Upload endpoint
-  if (req.method === 'POST' && req.url === '/upload') {
-    const chunks = [];
-    req.on('data', c => chunks.push(c));
-    req.on('end', async () => {
-      try {
-        const buffer = Buffer.concat(chunks);
-        const contentType = req.headers['content-type'] || '';
-        const boundaryMatch = contentType.match(/boundary=(.+)/);
-        if (!boundaryMatch) return json(400, { error: 'No boundary' });
-
-        const parts = parseMultipart(buffer, boundaryMatch[1]);
-        const filePart = parts.find(p => p.filename);
-        if (!filePart) return json(400, { error: 'No file found' });
-
-        const text = extractText(filePart.data, filePart.filename);
-        if (!text || text.trim().length < 50) return json(400, { error: 'Could not extract text from file' });
-
-        const textChunks = chunkText(text);
-        await saveChunks(filePart.filename, textChunks);
-        json(200, { success: true, filename: filePart.filename, chunks: textChunks.length });
-      } catch (err) {
-        json(500, { error: err.message });
-      }
-    });
-    return;
-  }
-
-  // Admin page
-  if (req.method === 'GET' && (req.url === '/admin' || req.url === '/admin/')) {
-    return html(200, ADMIN_PAGE);
-  }
-
-  res.writeHead(404, cors);
-  res.end('Not found');
-});
-
-// ── Admin HTML ────────────────────────────────────────────────────────────────
+// ─── ADMIN PAGE ───────────────────────────────────────────────────
 const ADMIN_PAGE = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stacked Chat — Knowledge Base Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<title>Stacked Chat Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #ede8df; --surface: #f5f0e8; --surface2: #e0d9ce;
-    --border: #d4cdc0; --border-dark: #c4bcb0;
-    --toast: #f04e1a; --toast-light: rgba(240,78,26,0.08); --toast-dark: #c93e10;
-    --text: #1e1a16; --text-dim: #6b5f53; --text-muted: #a8998a;
-    --green: #3a7a52; --green-light: #edf5f1;
-    --red: #c94040; --red-light: #fef2f2;
-    --shadow-sm: 0 1px 4px rgba(30,20,10,0.08);
-    --shadow-md: 0 4px 20px rgba(30,20,10,0.1);
-  }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:var(--bg); color:var(--text); font-family:'Outfit',sans-serif; min-height:100vh; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --cream:#ede8df;--cream-dark:#e0d9ce;
+  --orange:#f04e1a;--orange-light:#ff6b38;
+  --brown:#3a2e24;--brown-mid:#6b5744;
+  --white:#ffffff;--green:#2a9d5c;--red:#d64545;--blue:#2563eb;
+  --shadow:0 2px 16px rgba(58,46,36,0.10);--shadow-lg:0 8px 32px rgba(58,46,36,0.15);
+}
+body{background:var(--cream);font-family:'Outfit',sans-serif;color:var(--brown);min-height:100vh}
 
-  /* Header */
-  .header {
-    background:var(--bg); border-bottom:1.5px solid var(--border);
-    padding:16px 24px; display:flex; align-items:center; justify-content:space-between;
-    box-shadow:var(--shadow-sm); position:sticky; top:0; z-index:10;
-  }
-  .logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
-  .logo-icon { width:36px; height:36px; flex-shrink:0; }
-  .logo-name { display:flex; flex-direction:column; line-height:1; }
-  .logo-title { font-size:18px; font-weight:800; color:var(--toast); letter-spacing:-0.8px; text-transform:uppercase; font-style:italic; }
-  .logo-sub { font-size:9px; font-weight:600; color:var(--text-muted); letter-spacing:1.5px; text-transform:uppercase; margin-top:2px; }
-  .header-badge {
-    background:var(--toast-light); border:1px solid rgba(240,78,26,0.2);
-    color:var(--toast-dark); font-size:11px; font-weight:600;
-    padding:5px 12px; border-radius:20px; letter-spacing:0.3px;
-  }
+header{background:var(--white);border-bottom:1px solid var(--cream-dark);padding:16px 32px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
+.header-icon{width:40px;height:40px;object-fit:contain;mix-blend-mode:multiply}
+.header-wordmark{height:28px;object-fit:contain;mix-blend-mode:multiply}
+.admin-badge{background:var(--orange);color:#fff;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;letter-spacing:0.05em;text-transform:uppercase}
 
-  /* Page */
-  .page { max-width:640px; margin:0 auto; padding:32px 20px 60px; }
-  .page-header { margin-bottom:28px; }
-  .page-title { font-size:22px; font-weight:700; color:var(--text); letter-spacing:-0.3px; }
-  .page-subtitle { font-size:13px; color:var(--text-dim); margin-top:4px; line-height:1.6; }
+.container{max-width:1200px;margin:0 auto;padding:32px 24px}
 
-  /* Stats */
-  .stats { display:flex; gap:12px; margin-bottom:28px; }
-  .stat { flex:1; background:var(--surface); border:1.5px solid var(--border); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow-sm); }
-  .stat-val { font-size:22px; font-weight:800; color:var(--toast); letter-spacing:-0.5px; }
-  .stat-label { font-size:11px; color:var(--text-muted); margin-top:2px; font-weight:500; }
+/* tabs */
+.tabs{display:flex;gap:4px;background:var(--white);border-radius:14px;padding:4px;box-shadow:var(--shadow);margin-bottom:28px;overflow-x:auto}
+.tab{flex:1;min-width:80px;padding:10px 16px;background:none;border:none;border-radius:10px;font-family:'Outfit',sans-serif;font-size:14px;font-weight:500;color:var(--brown-mid);cursor:pointer;white-space:nowrap;transition:all 0.15s}
+.tab.active{background:var(--orange);color:#fff;box-shadow:0 2px 8px rgba(240,78,26,0.3)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
 
-  /* Card */
-  .card { background:var(--surface); border:1.5px solid var(--border); border-radius:16px; padding:22px; margin-bottom:16px; box-shadow:var(--shadow-sm); }
-  .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
-  .card-title { font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:0.8px; text-transform:uppercase; }
+/* stats row */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:28px}
+.stat{background:var(--white);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.stat-num{font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:var(--orange)}
+.stat-label{font-size:13px;color:var(--brown-mid);margin-top:4px}
 
-  /* Drop zone */
-  .drop-zone {
-    border:2px dashed var(--border-dark); border-radius:12px; padding:36px 20px;
-    text-align:center; cursor:pointer; transition:all 0.2s; background:var(--surface2);
-  }
-  .drop-zone:hover { border-color:var(--toast); background:var(--toast-light); }
-  .drop-zone.dragover { border-color:var(--toast); background:var(--toast-light); transform:scale(1.01); }
-  .drop-zone-icon { font-size:36px; margin-bottom:10px; }
-  .drop-zone-text { font-size:14px; font-weight:500; color:var(--text-dim); }
-  .drop-zone-sub { font-size:12px; color:var(--text-muted); margin-top:4px; }
-  input[type=file] { display:none; }
+/* charts / lists */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+@media(max-width:700px){.grid2{grid-template-columns:1fr}}
 
-  .upload-btn {
-    background:var(--toast); color:white; border:none;
-    font-family:'Outfit',sans-serif; font-weight:600; font-size:14px;
-    padding:11px 28px; border-radius:10px; cursor:pointer;
-    margin-top:16px; display:inline-flex; align-items:center; gap:6px;
-    transition:all 0.15s; box-shadow:0 2px 8px rgba(232,136,42,0.3);
-  }
-  .upload-btn:hover { background:var(--toast-dark); transform:translateY(-1px); }
-  .upload-btn:disabled { background:var(--border-dark); color:var(--text-muted); cursor:not-allowed; box-shadow:none; transform:none; }
+.card{background:var(--white);border-radius:16px;padding:24px;box-shadow:var(--shadow)}
+.card h3{font-family:'Playfair Display',serif;font-size:18px;margin-bottom:16px}
 
-  /* Progress */
-  .progress { margin-top:16px; display:none; }
-  .progress-bar { height:5px; background:var(--surface2); border-radius:3px; overflow:hidden; border:1px solid var(--border); }
-  .progress-fill { height:100%; background:var(--toast); border-radius:3px; transition:width 0.4s ease; width:0%; }
-  .progress-text { font-size:12px; color:var(--text-dim); margin-top:8px; font-weight:500; }
+.bar-row{margin-bottom:10px}
+.bar-label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+.bar-track{height:8px;background:var(--cream-dark);border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;background:var(--orange);border-radius:4px;transition:width 0.6s ease}
+.bar-fill.blue{background:var(--blue)}
 
-  /* File list */
-  .file-list { display:flex; flex-direction:column; gap:8px; }
-  .file-item {
-    display:flex; align-items:center; justify-content:space-between;
-    background:var(--surface2); border:1px solid var(--border);
-    border-radius:10px; padding:12px 14px; transition:all 0.15s;
-  }
-  .file-item:hover { border-color:var(--border-dark); box-shadow:var(--shadow-sm); }
-  .file-info { display:flex; align-items:center; gap:10px; }
-  .file-icon {
-    width:36px; height:36px; background:var(--toast-light);
-    border:1px solid rgba(232,136,42,0.2); border-radius:8px;
-    display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0;
-  }
-  .file-name { font-size:13px; font-weight:500; color:var(--text); }
-  .file-meta { display:flex; gap:8px; margin-top:2px; }
-  .file-date { font-size:11px; color:var(--text-muted); }
-  .file-badge {
-    font-size:10px; font-weight:600; color:var(--green);
-    background:var(--green-light); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;
-  }
-  .delete-btn {
-    background:none; border:1px solid transparent; color:var(--text-muted);
-    cursor:pointer; font-size:14px; padding:6px 8px; border-radius:8px;
-    transition:all 0.15s; flex-shrink:0;
-  }
-  .delete-btn:hover { color:var(--red); background:var(--red-light); border-color:rgba(201,64,64,0.2); }
+.empty{color:var(--brown-mid);font-size:14px;text-align:center;padding:24px 0}
 
-  .empty {
-    font-size:13px; color:var(--text-muted); text-align:center;
-    padding:32px 20px; font-style:italic;
-  }
+/* tables */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;padding:8px 12px;font-weight:600;color:var(--brown-mid);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid var(--cream-dark)}
+td{padding:10px 12px;border-bottom:1px solid var(--cream-dark);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--cream)}
 
-  /* Toast notification */
-  .notif {
-    position:fixed; bottom:28px; left:50%; transform:translateX(-50%) translateY(10px);
-    background:var(--surface); border:1px solid var(--border);
-    color:var(--text); font-size:13px; font-weight:500; padding:11px 22px;
-    border-radius:24px; opacity:0; transition:all 0.3s;
-    pointer-events:none; white-space:nowrap;
-    box-shadow:var(--shadow-md);
-  }
-  .notif.show { opacity:1; transform:translateX(-50%) translateY(0); }
-  .notif.success { border-color:rgba(45,122,79,0.3); color:var(--green); background:var(--green-light); }
-  .notif.error { border-color:rgba(201,64,64,0.3); color:var(--red); background:var(--red-light); }
+.badge{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.badge.open{background:#fff3cd;color:#856404}
+.badge.closed{background:#d1e7dd;color:#0a3622}
+.badge.indexed{background:#d1e7dd;color:#0a3622}
+
+/* upload */
+.drop-zone{border:2px dashed var(--cream-dark);border-radius:16px;padding:48px 32px;text-align:center;cursor:pointer;transition:all 0.2s}
+.drop-zone.dragging,.drop-zone:hover{border-color:var(--orange);background:rgba(240,78,26,0.04)}
+.drop-icon{font-size:40px;margin-bottom:12px}
+.drop-title{font-family:'Playfair Display',serif;font-size:18px;margin-bottom:6px}
+.drop-sub{font-size:13px;color:var(--brown-mid)}
+#fileInput{display:none}
+
+.upload-list{margin-top:20px;display:flex;flex-direction:column;gap:8px}
+.upload-item{background:var(--cream);border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.upload-item .fname{font-weight:500}
+.upload-item .fsize{color:var(--brown-mid);font-size:12px}
+.progress{height:4px;background:var(--cream-dark);border-radius:2px;margin-top:6px;overflow:hidden}
+.progress-bar{height:100%;background:var(--orange);border-radius:2px;width:0;transition:width 0.3s}
+
+.doc-list{display:flex;flex-direction:column;gap:8px;margin-top:16px}
+.doc-item{display:flex;align-items:center;justify-content:space-between;background:var(--cream);border-radius:10px;padding:12px 16px}
+.doc-info{display:flex;align-items:center;gap:10px}
+.doc-icon{width:32px;height:32px;background:var(--orange);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px}
+.doc-name{font-size:14px;font-weight:500}
+.doc-date{font-size:11px;color:var(--brown-mid)}
+.doc-del{background:none;border:none;color:var(--brown-mid);cursor:pointer;font-size:16px;padding:4px;border-radius:6px;transition:color 0.15s}
+.doc-del:hover{color:var(--red)}
+
+.ticket-msg{font-size:13px;color:var(--brown-mid);max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.close-btn{background:var(--green);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer}
+
+.notify{position:fixed;bottom:24px;right:24px;background:var(--brown);color:#fff;padding:12px 20px;border-radius:12px;font-size:14px;font-weight:500;transform:translateY(80px);opacity:0;transition:all 0.3s;z-index:99}
+.notify.show{transform:translateY(0);opacity:1}
+.notify.green{background:var(--green)}
 </style>
 </head>
 <body>
+<header>
+  <img class="header-icon" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Linkedin-profile%20(1).jpg" alt="">
+  <img class="header-wordmark" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Artboard%2025%20(3).png" alt="Stacked">
+  <span class="admin-badge">Admin</span>
+</header>
 
-<div class="header">
-  <div class="logo">
-    <svg class="logo-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M38 22 Q50 15 62 22 Q60 36 50 39 Q40 36 38 22Z" fill="#f04e1a"/>
-      <ellipse cx="50" cy="39" rx="12" ry="3.5" fill="#c93e10" opacity="0.4"/>
-      <path d="M28 41 Q50 32 72 41 Q69 59 50 63 Q31 59 28 41Z" fill="#f04e1a"/>
-      <ellipse cx="50" cy="63" rx="20" ry="5" fill="#c93e10" opacity="0.4"/>
-      <path d="M18 66 Q50 54 82 66 Q77 86 50 90 Q23 86 18 66Z" fill="#f04e1a"/>
-    </svg>
-    <div class="logo-name">
-      <div class="logo-title">Stacked</div>
-      <div class="logo-sub">Knowledge Base</div>
+<div class="container">
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('dashboard')">📊 Dashboard</button>
+    <button class="tab" onclick="showTab('tickets')">🎫 Tickets</button>
+    <button class="tab" onclick="showTab('conversations')">💬 Conversations</button>
+    <button class="tab" onclick="showTab('documents')">📄 Knowledge Base</button>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="tab-panel active" id="tab-dashboard">
+    <div class="stats" id="statsRow">
+      <div class="stat"><div class="stat-num" id="sConvs">—</div><div class="stat-label">Conversations</div></div>
+      <div class="stat"><div class="stat-num" id="sMsgs">—</div><div class="stat-label">Messages sent</div></div>
+      <div class="stat"><div class="stat-num" id="sTickets">—</div><div class="stat-label">Open tickets</div></div>
+      <div class="stat"><div class="stat-num" id="sDocs">—</div><div class="stat-label">Documents indexed</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Top topics</h3>
+        <div id="topicsChart"><div class="empty">Loading…</div></div>
+      </div>
+      <div class="card">
+        <h3>Top products mentioned</h3>
+        <div id="vendorsChart"><div class="empty">Loading…</div></div>
+      </div>
     </div>
   </div>
-  <div class="header-badge">Admin Panel</div>
+
+  <!-- TICKETS -->
+  <div class="tab-panel" id="tab-tickets">
+    <div class="card">
+      <h3>Support tickets</h3>
+      <div id="ticketsTable"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- CONVERSATIONS -->
+  <div class="tab-panel" id="tab-conversations">
+    <div class="card">
+      <h3>Recent conversations</h3>
+      <div id="convsTable"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- DOCUMENTS -->
+  <div class="tab-panel" id="tab-documents">
+    <div class="card">
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFiles(event)">
+        <div class="drop-icon">📄</div>
+        <div class="drop-title">Drop files here to add to the knowledge base</div>
+        <div class="drop-sub">Supports PDF, TXT, MD — up to 10MB each</div>
+      </div>
+      <input type="file" id="fileInput" multiple accept=".pdf,.txt,.md" onchange="handleFiles(this.files)">
+      <div class="upload-list" id="uploadList"></div>
+      <div class="doc-list" id="docList"><div class="empty">Loading documents…</div></div>
+    </div>
+  </div>
 </div>
 
-<div class="page">
-  <div class="page-header">
-    <div class="page-title">Knowledge Base</div>
-    <div class="page-subtitle">Upload documents to expand what the support bot knows. PDFs, guides, and troubleshooting docs all work.</div>
-  </div>
-
-  <div class="stats">
-    <div class="stat">
-      <div class="stat-val" id="docCount">—</div>
-      <div class="stat-label">Documents</div>
-    </div>
-    <div class="stat">
-      <div class="stat-val" id="chunkCount">—</div>
-      <div class="stat-label">Knowledge chunks</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">Upload Documents</div>
-    </div>
-    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-      <div class="drop-zone-icon">📄</div>
-      <div class="drop-zone-text">Drop files here or click to browse</div>
-      <div class="drop-zone-sub">PDF, TXT, MD supported · Multiple files at once</div>
-    </div>
-    <input type="file" id="fileInput" accept=".pdf,.txt,.md,.doc,.docx" multiple>
-    <div style="text-align:center">
-      <button class="upload-btn" id="uploadBtn" onclick="uploadFiles()" disabled>
-        ↑ Upload to Knowledge Base
-      </button>
-    </div>
-    <div class="progress" id="progress">
-      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-      <div class="progress-text" id="progressText">Uploading...</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">Uploaded Documents</div>
-    </div>
-    <div class="file-list" id="fileList"><div class="empty">Loading documents...</div></div>
-  </div>
-</div>
-
-<div class="notif" id="notif"></div>
+<div class="notify" id="notify"></div>
 
 <script>
-  const API = window.location.origin;
-  let selectedFiles = [];
-  let allFiles = [];
+let analytics = null;
 
-  const dropZone = document.getElementById('dropZone');
-  const fileInput = document.getElementById('fileInput');
+function showTab(id){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['dashboard','tickets','conversations','documents'][i]===id));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id==='tab-'+id));
+}
 
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-    selectedFiles = [...e.dataTransfer.files];
-    updateDropZone();
+function bar(label,count,max,blue=false){
+  const pct=max>0?Math.round((count/max)*100):0;
+  return '<div class="bar-row"><div class="bar-label"><span>'+label+'</span><span>'+count+'</span></div><div class="bar-track"><div class="bar-fill'+(blue?' blue':'')+'" style="width:'+pct+'%"></div></div></div>';
+}
+
+async function loadAnalytics(){
+  try{
+    const r=await fetch('/analytics');
+    analytics=await r.json();
+    if(analytics.error){console.error(analytics.error);return;}
+
+    document.getElementById('sConvs').textContent=analytics.totalConvs;
+    document.getElementById('sMsgs').textContent=analytics.totalMessages;
+    document.getElementById('sTickets').textContent=analytics.openTickets;
+    document.getElementById('sDocs').textContent=analytics.totalDocs;
+
+    // Topics chart
+    const tc=document.getElementById('topicsChart');
+    if(analytics.topTopics.length===0){tc.innerHTML='<div class="empty">No data yet — conversations will appear here.</div>';}
+    else{
+      const max=analytics.topTopics[0][1];
+      tc.innerHTML=analytics.topTopics.map(([t,c])=>bar(t,c,max)).join('');
+    }
+
+    // Vendors chart
+    const vc=document.getElementById('vendorsChart');
+    if(analytics.topVendors.length===0){vc.innerHTML='<div class="empty">No vendor mentions yet.</div>';}
+    else{
+      const max=analytics.topVendors[0][1];
+      vc.innerHTML=analytics.topVendors.map(([v,c])=>bar(v.charAt(0).toUpperCase()+v.slice(1),c,max,true)).join('');
+    }
+
+    // Tickets table
+    const tt=document.getElementById('ticketsTable');
+    if(analytics.tickets.length===0){tt.innerHTML='<div class="empty">No tickets raised yet.</div>';}
+    else{
+      tt.innerHTML='<table><thead><tr><th>Name</th><th>Venue</th><th>Issue</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>'+
+        analytics.tickets.map(t=>'<tr><td><strong>'+esc(t.name||'')+'</strong><br><small>'+esc(t.email||'')+'</small></td><td>'+esc(t.venue||'')+'</td><td class="ticket-msg">'+esc(t.issue||'')+'</td><td><span class="badge '+(t.status||'open')+'">'+esc(t.status||'open')+'</span></td><td>'+new Date(t.created_at).toLocaleDateString('en-GB')+'</td><td>'+(t.status==='open'?'<button class="close-btn" onclick="closeTicket('+t.id+')">Close</button>':'')+'</td></tr>').join('')+
+      '</tbody></table>';
+    }
+
+    // Conversations
+    const ct=document.getElementById('convsTable');
+    if(analytics.recentConvs.length===0){ct.innerHTML='<div class="empty">No conversations yet.</div>';}
+    else{
+      ct.innerHTML='<table><thead><tr><th>User</th><th>First message</th><th>Date</th></tr></thead><tbody>'+
+        analytics.recentConvs.map(c=>{
+          const msgs=c.messages||[];
+          const first=msgs.find(m=>m.role==='user');
+          return '<tr><td>'+(c.name?esc(c.name):'Unknown')+'<br><small style="color:var(--brown-mid)">'+esc(c.venue||'')+'</small></td><td style="max-width:320px">'+esc((first?.content||'').substring(0,120))+'</td><td>'+new Date(c.created_at).toLocaleDateString('en-GB')+'</td></tr>';
+        }).join('')+
+      '</tbody></table>';
+    }
+
+    // Docs
+    renderDocs(analytics.docs);
+
+  }catch(e){console.error(e);}
+}
+
+function renderDocs(docs){
+  const dl=document.getElementById('docList');
+  if(!docs||docs.length===0){dl.innerHTML='<div class="empty">No documents uploaded yet.</div>';return;}
+  const uniq=[...new Map(docs.map(d=>[d.filename,d])).values()];
+  dl.innerHTML=uniq.map(d=>'<div class="doc-item"><div class="doc-info"><div class="doc-icon">📄</div><div><div class="doc-name">'+esc(d.filename)+'</div><div class="doc-date">'+new Date(d.created_at).toLocaleDateString('en-GB')+'</div></div></div><div style="display:flex;gap:8px;align-items:center"><span class="badge indexed">Indexed</span><button class="doc-del" onclick="deleteDoc('+JSON.stringify(d.filename)+')">×</button></div></div>').join('');
+}
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+async function closeTicket(id){
+  await fetch('/ticket/'+id+'/close',{method:'POST'});
+  notify('Ticket closed','green');
+  loadAnalytics();
+}
+
+async function deleteDoc(filename){
+  if(!confirm('Remove '+filename+' from the knowledge base?'))return;
+  await fetch('/documents?filename='+encodeURIComponent(filename),{method:'DELETE'});
+  notify('Document removed','green');
+  loadAnalytics();
+}
+
+// ─── File upload ─────────────────────────────────────────────────
+function dragOver(e){e.preventDefault();document.getElementById('dropZone').classList.add('dragging');}
+function dragLeave(e){document.getElementById('dropZone').classList.remove('dragging');}
+function dropFiles(e){e.preventDefault();document.getElementById('dropZone').classList.remove('dragging');handleFiles(e.dataTransfer.files);}
+
+async function handleFiles(files){
+  for(const file of files){
+    const item=document.createElement('div');
+    item.className='upload-item';
+    item.innerHTML='<div><div class="fname">'+esc(file.name)+'</div><div class="fsize">'+(file.size/1024).toFixed(0)+' KB</div><div class="progress"><div class="progress-bar" id="pb_'+file.name.replace(/\W/g,'')+'"></div></div></div><span>⏳</span>';
+    document.getElementById('uploadList').appendChild(item);
+
+    try{
+      const text=await readFile(file);
+      const pb=document.getElementById('pb_'+file.name.replace(/\W/g,''));
+      if(pb)pb.style.width='50%';
+
+      const r=await fetch('/upload',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({filename:file.name,content:text})
+      });
+      const d=await r.json();
+      if(pb)pb.style.width='100%';
+      item.querySelector('span').textContent='✅';
+      notify(file.name+' indexed!','green');
+      setTimeout(()=>loadAnalytics(),1000);
+    }catch(e){
+      item.querySelector('span').textContent='❌';
+      notify('Failed to upload '+file.name);
+    }
+  }
+}
+
+function readFile(file){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=e=>res(e.target.result);
+    r.onerror=rej;
+    r.readAsText(file);
   });
-  fileInput.addEventListener('change', () => {
-    selectedFiles = [...fileInput.files];
-    updateDropZone();
-  });
+}
 
-  function updateDropZone() {
-    if (selectedFiles.length > 0) {
-      dropZone.querySelector('.drop-zone-text').textContent = selectedFiles.map(f => f.name).join(', ');
-      dropZone.querySelector('.drop-zone-sub').textContent = selectedFiles.length + ' file(s) ready to upload';
-      document.getElementById('uploadBtn').disabled = false;
-    }
-  }
+function notify(msg,type=''){
+  const n=document.getElementById('notify');
+  n.textContent=msg; n.className='notify '+type+' show';
+  setTimeout(()=>n.className='notify',3000);
+}
 
-  async function uploadFiles() {
-    if (!selectedFiles.length) return;
-    const btn = document.getElementById('uploadBtn');
-    const progress = document.getElementById('progress');
-    const fill = document.getElementById('progressFill');
-    const progressText = document.getElementById('progressText');
-
-    btn.disabled = true;
-    progress.style.display = 'block';
-
-    for (let i = 0; i < selectedFiles.length; i++) {
-      const file = selectedFiles[i];
-      progressText.textContent = 'Uploading ' + file.name + '...';
-      fill.style.width = ((i / selectedFiles.length) * 100) + '%';
-      const formData = new FormData();
-      formData.append('file', file);
-      try {
-        const res = await fetch(API + '/upload', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        showNotif(file.name + ' added — ' + data.chunks + ' chunks indexed', 'success');
-      } catch (err) {
-        showNotif('Upload failed: ' + err.message, 'error');
-      }
-    }
-
-    fill.style.width = '100%';
-    progressText.textContent = 'All done!';
-    setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0'; }, 2000);
-
-    selectedFiles = [];
-    fileInput.value = '';
-    dropZone.querySelector('.drop-zone-text').textContent = 'Drop files here or click to browse';
-    dropZone.querySelector('.drop-zone-sub').textContent = 'PDF, TXT, MD supported · Multiple files at once';
-    btn.disabled = true;
-    loadFiles();
-  }
-
-  async function loadFiles() {
-    const list = document.getElementById('fileList');
-    try {
-      const res = await fetch(API + '/files');
-      allFiles = await res.json();
-      document.getElementById('docCount').textContent = allFiles.length;
-
-      // Get total chunks
-      const chunksRes = await fetch(API + '/files?chunks=1');
-      // Estimate based on files
-      document.getElementById('chunkCount').textContent = allFiles.length > 0 ? allFiles.length * 8 + '+' : '0';
-
-      if (!allFiles.length) {
-        list.innerHTML = '<div class="empty">No documents uploaded yet — add your first one above</div>';
-        return;
-      }
-      list.innerHTML = allFiles.map(f => \`
-        <div class="file-item">
-          <div class="file-info">
-            <div class="file-icon">📄</div>
-            <div>
-              <div class="file-name">\${f.filename}</div>
-              <div class="file-meta">
-                <span class="file-date">\${new Date(f.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}</span>
-                <span class="file-badge">INDEXED</span>
-              </div>
-            </div>
-          </div>
-          <button class="delete-btn" onclick="deleteFile('\${f.filename}')" title="Remove from knowledge base">🗑️</button>
-        </div>
-      \`).join('');
-    } catch {
-      list.innerHTML = '<div class="empty">Could not load documents</div>';
-    }
-  }
-
-  async function deleteFile(filename) {
-    if (!confirm('Remove "' + filename + '" from the knowledge base?')) return;
-    await fetch(API + '/files/' + encodeURIComponent(filename), { method: 'DELETE' });
-    showNotif(filename + ' removed', 'success');
-    loadFiles();
-  }
-
-  function showNotif(msg, type) {
-    const el = document.getElementById('notif');
-    el.textContent = msg;
-    el.className = 'notif show ' + (type || '');
-    setTimeout(() => el.className = 'notif', 3500);
-  }
-
-  loadFiles();
+loadAnalytics();
 </script>
 </body>
 </html>`;
 
+// ─── HTTP SERVER ───────────────────────────────────────────────────
 const PORT = process.env.PORT || 8080;
-server.listen(PORT, '0.0.0.0', () => console.log(`Toast Bot server running on port ${PORT}`));
+
+const server = http.createServer(async (req, res) => {
+  const url = req.url;
+  const method = req.method;
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
+
+  // Health
+  if (url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok' })); return;
+  }
+
+  // Admin
+  if (url === '/admin' || url === '/admin/') {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(ADMIN_PAGE); return;
+  }
+
+  // Analytics
+  if (url === '/analytics') {
+    const data = await getAnalytics();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data)); return;
+  }
+
+  // Close ticket
+  if (method === 'POST' && url.startsWith('/ticket/') && url.endsWith('/close')) {
+    const id = url.split('/')[2];
+    await sbFetch(`/rest/v1/tickets?id=eq.${id}`, {
+      method: 'PATCH',
+      body: { status: 'closed' },
+      headers: { 'Prefer': 'return=minimal' }
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true })); return;
+  }
+
+  // Delete document
+  if (method === 'DELETE' && url.startsWith('/documents')) {
+    const params = new URL(url, 'http://localhost');
+    const filename = params.searchParams.get('filename');
+    if (filename) {
+      await sbFetch(`/rest/v1/documents?filename=eq.${encodeURIComponent(filename)}`, {
+        method: 'DELETE', headers: { 'Prefer': 'return=minimal' }
+      });
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true })); return;
+  }
+
+  // Upload document
+  if (method === 'POST' && url === '/upload') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { filename, content } = JSON.parse(body);
+        const chunks = chunkText(content, filename);
+        for (const chunk of chunks) {
+          await sbFetch('/rest/v1/documents', {
+            method: 'POST',
+            body: chunk,
+            headers: { 'Prefer': 'return=minimal' }
+          });
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, chunks: chunks.length }));
+      } catch(e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // Chat
+  if (method === 'POST' && url === '/chat') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { message, history = [] } = JSON.parse(body);
+
+        // Search uploaded documents
+        let docContext = '';
+        try {
+          const docsR = await sbFetch('/rest/v1/documents?select=filename,content&limit=200');
+          if (Array.isArray(docsR.data) && docsR.data.length > 0) {
+            const msgLower = message.toLowerCase();
+            const relevant = docsR.data.filter(d =>
+              msgLower.split(' ').some(w => w.length > 3 && d.content.toLowerCase().includes(w))
+            ).slice(0, 4);
+            if (relevant.length > 0) {
+              docContext = '\n\n=== FROM KNOWLEDGE BASE ===\n' +
+                relevant.map(d => `[${d.filename}]\n${d.content.substring(0, 600)}`).join('\n\n');
+            }
+          }
+        } catch(e) { /* no docs */ }
+
+        const systemPrompt = `You are the Stacked Chat assistant — a friendly, direct AI support bot for hospitality operators in the UK. You specialise in hospitality technology troubleshooting.
+
+Your personality:
+- Calm under pressure (operators often message you during a crisis)
+- Straight to the point — no waffle
+- Friendly but efficient
+- Use British English
+
+Always:
+- Give numbered steps for troubleshooting
+- Mention vendor support numbers when relevant
+- Suggest a workaround if the main fix won't work mid-service
+- End with "If this hasn't resolved it, hit 'Raise a ticket' below" if the issue seems complex
+
+KNOWLEDGE BASE:
+${KNOWLEDGE_BASE}${docContext}`;
+
+        const messages = history.slice(-8).map(m => ({ role: m.role, content: m.content }));
+        if (!messages.length || messages[messages.length-1].content !== message) {
+          messages.push({ role: 'user', content: message });
+        }
+
+        const https = require('https');
+        const apiBody = JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          system: systemPrompt,
+          messages
+        });
+
+        const apiRes = await new Promise((resolve, reject) => {
+          const r = https.request({
+            hostname: 'api.anthropic.com',
+            path: '/v1/messages',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': ANTHROPIC_KEY,
+              'anthropic-version': '2023-06-01',
+              'Content-Length': Buffer.byteLength(apiBody)
+            }
+          }, (resp) => {
+            let d = '';
+            resp.on('data', c => d += c);
+            resp.on('end', () => resolve(JSON.parse(d)));
+          });
+          r.on('error', reject);
+          r.write(apiBody);
+          r.end();
+        });
+
+        const reply = apiRes.content?.[0]?.text || 'Sorry, I could not get a response. Please try again.';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ response: reply }));
+
+      } catch(e) {
+        console.error(e);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ response: 'Server error. Please try again in a moment.' }));
+      }
+    });
+    return;
+  }
+
+  res.writeHead(404); res.end('Not found');
+});
+
+function chunkText(text, filename) {
+  const chunkSize = 1200;
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push({ filename, content: text.substring(i, i + chunkSize), chunk_index: chunks.length });
+  }
+  return chunks;
+}
+
+server.listen(PORT, () => console.log(`Stacked Chat server running on port ${PORT}`));
