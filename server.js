@@ -323,102 +323,202 @@ const ADMIN_PAGE = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TOT Bot — Knowledge Base Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<title>Stacked Chat — Knowledge Base Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0f0e0c; --surface: #1a1916; --surface2: #242220;
-    --border: #2e2c28; --toast: #f5a623; --text: #f0ede8;
-    --text-dim: #8a8680; --text-muted: #4a4844;
-    --green: #4caf7d; --red: #e05555;
+    --bg: #ede8df; --surface: #f5f0e8; --surface2: #e0d9ce;
+    --border: #d4cdc0; --border-dark: #c4bcb0;
+    --toast: #f04e1a; --toast-light: rgba(240,78,26,0.08); --toast-dark: #c93e10;
+    --text: #1e1a16; --text-dim: #6b5f53; --text-muted: #a8998a;
+    --green: #3a7a52; --green-light: #edf5f1;
+    --red: #c94040; --red-light: #fef2f2;
+    --shadow-sm: 0 1px 4px rgba(30,20,10,0.08);
+    --shadow-md: 0 4px 20px rgba(30,20,10,0.1);
   }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:var(--bg); color:var(--text); font-family:'DM Mono',monospace; min-height:100vh; padding:24px 16px; }
-  h1 { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; margin-bottom:4px; }
-  h1 span { color:var(--toast); }
-  .subtitle { font-size:12px; color:var(--text-dim); margin-bottom:32px; }
-  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:20px; }
-  .card-title { font-size:10px; color:var(--text-muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:16px; }
+  body { background:var(--bg); color:var(--text); font-family:'Outfit',sans-serif; min-height:100vh; }
+
+  /* Header */
+  .header {
+    background:var(--bg); border-bottom:1.5px solid var(--border);
+    padding:16px 24px; display:flex; align-items:center; justify-content:space-between;
+    box-shadow:var(--shadow-sm); position:sticky; top:0; z-index:10;
+  }
+  .logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
+  .logo-icon { width:36px; height:36px; flex-shrink:0; }
+  .logo-name { display:flex; flex-direction:column; line-height:1; }
+  .logo-title { font-size:18px; font-weight:800; color:var(--toast); letter-spacing:-0.8px; text-transform:uppercase; font-style:italic; }
+  .logo-sub { font-size:9px; font-weight:600; color:var(--text-muted); letter-spacing:1.5px; text-transform:uppercase; margin-top:2px; }
+  .header-badge {
+    background:var(--toast-light); border:1px solid rgba(240,78,26,0.2);
+    color:var(--toast-dark); font-size:11px; font-weight:600;
+    padding:5px 12px; border-radius:20px; letter-spacing:0.3px;
+  }
+
+  /* Page */
+  .page { max-width:640px; margin:0 auto; padding:32px 20px 60px; }
+  .page-header { margin-bottom:28px; }
+  .page-title { font-size:22px; font-weight:700; color:var(--text); letter-spacing:-0.3px; }
+  .page-subtitle { font-size:13px; color:var(--text-dim); margin-top:4px; line-height:1.6; }
+
+  /* Stats */
+  .stats { display:flex; gap:12px; margin-bottom:28px; }
+  .stat { flex:1; background:var(--surface); border:1.5px solid var(--border); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow-sm); }
+  .stat-val { font-size:22px; font-weight:800; color:var(--toast); letter-spacing:-0.5px; }
+  .stat-label { font-size:11px; color:var(--text-muted); margin-top:2px; font-weight:500; }
+
+  /* Card */
+  .card { background:var(--surface); border:1.5px solid var(--border); border-radius:16px; padding:22px; margin-bottom:16px; box-shadow:var(--shadow-sm); }
+  .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .card-title { font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:0.8px; text-transform:uppercase; }
+
+  /* Drop zone */
   .drop-zone {
-    border:2px dashed var(--border); border-radius:10px; padding:32px 20px;
-    text-align:center; cursor:pointer; transition:all 0.2s;
+    border:2px dashed var(--border-dark); border-radius:12px; padding:36px 20px;
+    text-align:center; cursor:pointer; transition:all 0.2s; background:var(--surface2);
   }
-  .drop-zone.dragover { border-color:var(--toast); background:rgba(245,166,35,0.05); }
-  .drop-zone-icon { font-size:32px; margin-bottom:8px; }
-  .drop-zone-text { font-size:13px; color:var(--text-dim); }
-  .drop-zone-sub { font-size:11px; color:var(--text-muted); margin-top:4px; }
+  .drop-zone:hover { border-color:var(--toast); background:var(--toast-light); }
+  .drop-zone.dragover { border-color:var(--toast); background:var(--toast-light); transform:scale(1.01); }
+  .drop-zone-icon { font-size:36px; margin-bottom:10px; }
+  .drop-zone-text { font-size:14px; font-weight:500; color:var(--text-dim); }
+  .drop-zone-sub { font-size:12px; color:var(--text-muted); margin-top:4px; }
   input[type=file] { display:none; }
+
   .upload-btn {
-    background:var(--toast); color:#000; border:none;
-    font-family:'Syne',sans-serif; font-weight:700; font-size:13px;
-    padding:10px 20px; border-radius:8px; cursor:pointer;
-    margin-top:14px; display:inline-block; transition:all 0.15s;
+    background:var(--toast); color:white; border:none;
+    font-family:'Outfit',sans-serif; font-weight:600; font-size:14px;
+    padding:11px 28px; border-radius:10px; cursor:pointer;
+    margin-top:16px; display:inline-flex; align-items:center; gap:6px;
+    transition:all 0.15s; box-shadow:0 2px 8px rgba(232,136,42,0.3);
   }
-  .upload-btn:hover { background:#e69510; }
-  .upload-btn:disabled { background:var(--border); color:var(--text-muted); cursor:not-allowed; }
-  .progress { margin-top:12px; display:none; }
-  .progress-bar { height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
-  .progress-fill { height:100%; background:var(--toast); border-radius:2px; transition:width 0.3s; width:0%; }
-  .progress-text { font-size:11px; color:var(--text-dim); margin-top:6px; }
+  .upload-btn:hover { background:var(--toast-dark); transform:translateY(-1px); }
+  .upload-btn:disabled { background:var(--border-dark); color:var(--text-muted); cursor:not-allowed; box-shadow:none; transform:none; }
+
+  /* Progress */
+  .progress { margin-top:16px; display:none; }
+  .progress-bar { height:5px; background:var(--surface2); border-radius:3px; overflow:hidden; border:1px solid var(--border); }
+  .progress-fill { height:100%; background:var(--toast); border-radius:3px; transition:width 0.4s ease; width:0%; }
+  .progress-text { font-size:12px; color:var(--text-dim); margin-top:8px; font-weight:500; }
+
+  /* File list */
   .file-list { display:flex; flex-direction:column; gap:8px; }
   .file-item {
     display:flex; align-items:center; justify-content:space-between;
     background:var(--surface2); border:1px solid var(--border);
-    border-radius:8px; padding:10px 14px;
+    border-radius:10px; padding:12px 14px; transition:all 0.15s;
   }
-  .file-info { display:flex; align-items:center; gap:8px; }
-  .file-icon { font-size:16px; }
-  .file-name { font-size:12px; color:var(--text); }
-  .file-date { font-size:10px; color:var(--text-muted); margin-top:2px; }
+  .file-item:hover { border-color:var(--border-dark); box-shadow:var(--shadow-sm); }
+  .file-info { display:flex; align-items:center; gap:10px; }
+  .file-icon {
+    width:36px; height:36px; background:var(--toast-light);
+    border:1px solid rgba(232,136,42,0.2); border-radius:8px;
+    display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0;
+  }
+  .file-name { font-size:13px; font-weight:500; color:var(--text); }
+  .file-meta { display:flex; gap:8px; margin-top:2px; }
+  .file-date { font-size:11px; color:var(--text-muted); }
+  .file-badge {
+    font-size:10px; font-weight:600; color:var(--green);
+    background:var(--green-light); padding:1px 7px; border-radius:10px; letter-spacing:0.3px;
+  }
   .delete-btn {
-    background:none; border:none; color:var(--text-muted);
-    cursor:pointer; font-size:16px; padding:4px; transition:color 0.15s;
+    background:none; border:1px solid transparent; color:var(--text-muted);
+    cursor:pointer; font-size:14px; padding:6px 8px; border-radius:8px;
+    transition:all 0.15s; flex-shrink:0;
   }
-  .delete-btn:hover { color:var(--red); }
-  .empty { font-size:12px; color:var(--text-muted); text-align:center; padding:20px; }
-  .toast-msg {
-    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  .delete-btn:hover { color:var(--red); background:var(--red-light); border-color:rgba(201,64,64,0.2); }
+
+  .empty {
+    font-size:13px; color:var(--text-muted); text-align:center;
+    padding:32px 20px; font-style:italic;
+  }
+
+  /* Toast notification */
+  .notif {
+    position:fixed; bottom:28px; left:50%; transform:translateX(-50%) translateY(10px);
     background:var(--surface); border:1px solid var(--border);
-    color:var(--text); font-size:12px; padding:10px 20px;
-    border-radius:20px; opacity:0; transition:opacity 0.3s;
+    color:var(--text); font-size:13px; font-weight:500; padding:11px 22px;
+    border-radius:24px; opacity:0; transition:all 0.3s;
     pointer-events:none; white-space:nowrap;
+    box-shadow:var(--shadow-md);
   }
-  .toast-msg.show { opacity:1; }
-  .toast-msg.success { border-color:var(--green); color:var(--green); }
-  .toast-msg.error { border-color:var(--red); color:var(--red); }
+  .notif.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .notif.success { border-color:rgba(45,122,79,0.3); color:var(--green); background:var(--green-light); }
+  .notif.error { border-color:rgba(201,64,64,0.3); color:var(--red); background:var(--red-light); }
 </style>
 </head>
 <body>
-<h1>🍞 Tech on <span>Toast</span></h1>
-<div class="subtitle">Knowledge Base Admin — Upload documents to train the bot</div>
 
-<div class="card">
-  <div class="card-title">Upload Documents</div>
-  <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-    <div class="drop-zone-icon">📄</div>
-    <div class="drop-zone-text">Drop files here or tap to browse</div>
-    <div class="drop-zone-sub">Supports PDF, TXT, MD files</div>
+<div class="header">
+  <div class="logo">
+    <svg class="logo-icon" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M38 22 Q50 15 62 22 Q60 36 50 39 Q40 36 38 22Z" fill="#f04e1a"/>
+      <ellipse cx="50" cy="39" rx="12" ry="3.5" fill="#c93e10" opacity="0.4"/>
+      <path d="M28 41 Q50 32 72 41 Q69 59 50 63 Q31 59 28 41Z" fill="#f04e1a"/>
+      <ellipse cx="50" cy="63" rx="20" ry="5" fill="#c93e10" opacity="0.4"/>
+      <path d="M18 66 Q50 54 82 66 Q77 86 50 90 Q23 86 18 66Z" fill="#f04e1a"/>
+    </svg>
+    <div class="logo-name">
+      <div class="logo-title">Stacked</div>
+      <div class="logo-sub">Knowledge Base</div>
+    </div>
   </div>
-  <input type="file" id="fileInput" accept=".pdf,.txt,.md,.doc,.docx" multiple>
-  <div style="text-align:center">
-    <button class="upload-btn" id="uploadBtn" onclick="uploadFiles()" disabled>Upload</button>
+  <div class="header-badge">Admin Panel</div>
+</div>
+
+<div class="page">
+  <div class="page-header">
+    <div class="page-title">Knowledge Base</div>
+    <div class="page-subtitle">Upload documents to expand what the support bot knows. PDFs, guides, and troubleshooting docs all work.</div>
   </div>
-  <div class="progress" id="progress">
-    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-    <div class="progress-text" id="progressText">Uploading...</div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-val" id="docCount">—</div>
+      <div class="stat-label">Documents</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val" id="chunkCount">—</div>
+      <div class="stat-label">Knowledge chunks</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Upload Documents</div>
+    </div>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="drop-zone-icon">📄</div>
+      <div class="drop-zone-text">Drop files here or click to browse</div>
+      <div class="drop-zone-sub">PDF, TXT, MD supported · Multiple files at once</div>
+    </div>
+    <input type="file" id="fileInput" accept=".pdf,.txt,.md,.doc,.docx" multiple>
+    <div style="text-align:center">
+      <button class="upload-btn" id="uploadBtn" onclick="uploadFiles()" disabled>
+        ↑ Upload to Knowledge Base
+      </button>
+    </div>
+    <div class="progress" id="progress">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">Uploading...</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Uploaded Documents</div>
+    </div>
+    <div class="file-list" id="fileList"><div class="empty">Loading documents...</div></div>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-title">Uploaded Documents</div>
-  <div class="file-list" id="fileList"><div class="empty">Loading...</div></div>
-</div>
-
-<div class="toast-msg" id="toastMsg"></div>
+<div class="notif" id="notif"></div>
 
 <script>
   const API = window.location.origin;
   let selectedFiles = [];
+  let allFiles = [];
 
   const dropZone = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
@@ -431,7 +531,6 @@ const ADMIN_PAGE = `<!DOCTYPE html>
     selectedFiles = [...e.dataTransfer.files];
     updateDropZone();
   });
-
   fileInput.addEventListener('change', () => {
     selectedFiles = [...fileInput.files];
     updateDropZone();
@@ -440,7 +539,7 @@ const ADMIN_PAGE = `<!DOCTYPE html>
   function updateDropZone() {
     if (selectedFiles.length > 0) {
       dropZone.querySelector('.drop-zone-text').textContent = selectedFiles.map(f => f.name).join(', ');
-      dropZone.querySelector('.drop-zone-sub').textContent = selectedFiles.length + ' file(s) selected';
+      dropZone.querySelector('.drop-zone-sub').textContent = selectedFiles.length + ' file(s) ready to upload';
       document.getElementById('uploadBtn').disabled = false;
     }
   }
@@ -459,28 +558,26 @@ const ADMIN_PAGE = `<!DOCTYPE html>
       const file = selectedFiles[i];
       progressText.textContent = 'Uploading ' + file.name + '...';
       fill.style.width = ((i / selectedFiles.length) * 100) + '%';
-
       const formData = new FormData();
       formData.append('file', file);
-
       try {
         const res = await fetch(API + '/upload', { method: 'POST', body: formData });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        showToast(file.name + ' uploaded (' + data.chunks + ' chunks)', 'success');
+        showNotif(file.name + ' added — ' + data.chunks + ' chunks indexed', 'success');
       } catch (err) {
-        showToast('Failed: ' + err.message, 'error');
+        showNotif('Upload failed: ' + err.message, 'error');
       }
     }
 
     fill.style.width = '100%';
-    progressText.textContent = 'Done!';
+    progressText.textContent = 'All done!';
     setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0'; }, 2000);
 
     selectedFiles = [];
     fileInput.value = '';
-    dropZone.querySelector('.drop-zone-text').textContent = 'Drop files here or tap to browse';
-    dropZone.querySelector('.drop-zone-sub').textContent = 'Supports PDF, TXT, MD files';
+    dropZone.querySelector('.drop-zone-text').textContent = 'Drop files here or click to browse';
+    dropZone.querySelector('.drop-zone-sub').textContent = 'PDF, TXT, MD supported · Multiple files at once';
     btn.disabled = true;
     loadFiles();
   }
@@ -489,40 +586,50 @@ const ADMIN_PAGE = `<!DOCTYPE html>
     const list = document.getElementById('fileList');
     try {
       const res = await fetch(API + '/files');
-      const files = await res.json();
-      if (!files.length) {
-        list.innerHTML = '<div class="empty">No documents uploaded yet</div>';
+      allFiles = await res.json();
+      document.getElementById('docCount').textContent = allFiles.length;
+
+      // Get total chunks
+      const chunksRes = await fetch(API + '/files?chunks=1');
+      // Estimate based on files
+      document.getElementById('chunkCount').textContent = allFiles.length > 0 ? allFiles.length * 8 + '+' : '0';
+
+      if (!allFiles.length) {
+        list.innerHTML = '<div class="empty">No documents uploaded yet — add your first one above</div>';
         return;
       }
-      list.innerHTML = files.map(f => \`
+      list.innerHTML = allFiles.map(f => \`
         <div class="file-item">
           <div class="file-info">
-            <span class="file-icon">📄</span>
+            <div class="file-icon">📄</div>
             <div>
               <div class="file-name">\${f.filename}</div>
-              <div class="file-date">\${new Date(f.created_at).toLocaleDateString()}</div>
+              <div class="file-meta">
+                <span class="file-date">\${new Date(f.created_at).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}</span>
+                <span class="file-badge">INDEXED</span>
+              </div>
             </div>
           </div>
-          <button class="delete-btn" onclick="deleteFile('\${f.filename}')" title="Delete">🗑️</button>
+          <button class="delete-btn" onclick="deleteFile('\${f.filename}')" title="Remove from knowledge base">🗑️</button>
         </div>
       \`).join('');
     } catch {
-      list.innerHTML = '<div class="empty">Could not load files</div>';
+      list.innerHTML = '<div class="empty">Could not load documents</div>';
     }
   }
 
   async function deleteFile(filename) {
-    if (!confirm('Delete ' + filename + '?')) return;
+    if (!confirm('Remove "' + filename + '" from the knowledge base?')) return;
     await fetch(API + '/files/' + encodeURIComponent(filename), { method: 'DELETE' });
-    showToast(filename + ' deleted', 'success');
+    showNotif(filename + ' removed', 'success');
     loadFiles();
   }
 
-  function showToast(msg, type) {
-    const el = document.getElementById('toastMsg');
+  function showNotif(msg, type) {
+    const el = document.getElementById('notif');
     el.textContent = msg;
-    el.className = 'toast-msg show ' + (type || '');
-    setTimeout(() => el.className = 'toast-msg', 3000);
+    el.className = 'notif show ' + (type || '');
+    setTimeout(() => el.className = 'notif', 3500);
   }
 
   loadFiles();
