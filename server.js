@@ -239,8 +239,8 @@ const ADMIN_PAGE = `<!DOCTYPE html>
 body{background:var(--cream);font-family:'Outfit',sans-serif;color:var(--brown);min-height:100vh}
 
 header{background:var(--white);border-bottom:1px solid var(--cream-dark);padding:16px 32px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
-.header-icon{width:40px;height:40px;object-fit:contain;mix-blend-mode:multiply}
-.header-wordmark{height:28px;object-fit:contain;mix-blend-mode:multiply}
+.header-icon{width:40px;height:40px;object-fit:contain}
+.header-wordmark{height:28px;object-fit:contain}
 .admin-badge{background:var(--orange);color:#fff;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;letter-spacing:0.05em;text-transform:uppercase}
 
 .container{max-width:1200px;margin:0 auto;padding:32px 24px}
@@ -319,8 +319,8 @@ tr:hover td{background:var(--cream)}
 </head>
 <body>
 <header>
-  <img class="header-icon" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Linkedin-profile%20(1).jpg" alt="">
-  <img class="header-wordmark" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Artboard%2025%20(3).png" alt="Stacked">
+  <img class="header-icon" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/The%20Bench%20by%20Stacked%20(1).png" alt="">
+  <img class="header-wordmark" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Stacked%20(3).svg" alt="Stacked">
   <span class="admin-badge">Admin</span>
 </header>
 
