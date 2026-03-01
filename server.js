@@ -223,6 +223,7 @@ const ADMIN_PAGE = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stacked Chat Admin</title>
+<link rel="icon" type="image/jpeg" href="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Linkedin-profile%20(1).jpg">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
