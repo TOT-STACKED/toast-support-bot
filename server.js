@@ -226,7 +226,7 @@ const ADMIN_PAGE = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stacked Chat Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -236,7 +236,7 @@ const ADMIN_PAGE = `<!DOCTYPE html>
   --white:#ffffff;--green:#2a9d5c;--red:#d64545;--blue:#2563eb;
   --shadow:0 2px 16px rgba(58,46,36,0.10);--shadow-lg:0 8px 32px rgba(58,46,36,0.15);
 }
-body{background:var(--cream);font-family:'Outfit',sans-serif;color:var(--brown);min-height:100vh}
+body{background:var(--cream);font-family:'DM Sans',sans-serif;color:var(--brown);min-height:100vh}
 
 header{background:var(--white);border-bottom:1px solid var(--cream-dark);padding:16px 32px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
 .header-icon{width:40px;height:40px;object-fit:contain}
@@ -247,7 +247,7 @@ header{background:var(--white);border-bottom:1px solid var(--cream-dark);padding
 
 /* tabs */
 .tabs{display:flex;gap:4px;background:var(--white);border-radius:14px;padding:4px;box-shadow:var(--shadow);margin-bottom:28px;overflow-x:auto}
-.tab{flex:1;min-width:80px;padding:10px 16px;background:none;border:none;border-radius:10px;font-family:'Outfit',sans-serif;font-size:14px;font-weight:500;color:var(--brown-mid);cursor:pointer;white-space:nowrap;transition:all 0.15s}
+.tab{flex:1;min-width:80px;padding:10px 16px;background:none;border:none;border-radius:10px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;color:var(--brown-mid);cursor:pointer;white-space:nowrap;transition:all 0.15s}
 .tab.active{background:var(--orange);color:#fff;box-shadow:0 2px 8px rgba(240,78,26,0.3)}
 .tab-panel{display:none}
 .tab-panel.active{display:block}
@@ -255,7 +255,7 @@ header{background:var(--white);border-bottom:1px solid var(--cream-dark);padding
 /* stats row */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-bottom:28px}
 .stat{background:var(--white);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
-.stat-num{font-family:'Playfair Display',serif;font-size:32px;font-weight:700;color:var(--orange)}
+.stat-num{font-family:'Fraunces',serif;font-size:32px;font-weight:700;color:var(--orange)}
 .stat-label{font-size:13px;color:var(--brown-mid);margin-top:4px}
 
 /* charts / lists */
@@ -263,7 +263,7 @@ header{background:var(--white);border-bottom:1px solid var(--cream-dark);padding
 @media(max-width:700px){.grid2{grid-template-columns:1fr}}
 
 .card{background:var(--white);border-radius:16px;padding:24px;box-shadow:var(--shadow)}
-.card h3{font-family:'Playfair Display',serif;font-size:18px;margin-bottom:16px}
+.card h3{font-family:'Fraunces',serif;font-size:18px;margin-bottom:16px}
 
 .bar-row{margin-bottom:10px}
 .bar-label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
@@ -289,7 +289,7 @@ tr:hover td{background:var(--cream)}
 .drop-zone{border:2px dashed var(--cream-dark);border-radius:16px;padding:48px 32px;text-align:center;cursor:pointer;transition:all 0.2s}
 .drop-zone.dragging,.drop-zone:hover{border-color:var(--orange);background:rgba(240,78,26,0.04)}
 .drop-icon{font-size:40px;margin-bottom:12px}
-.drop-title{font-family:'Playfair Display',serif;font-size:18px;margin-bottom:6px}
+.drop-title{font-family:'Fraunces',serif;font-size:18px;margin-bottom:6px}
 .drop-sub{font-size:13px;color:var(--brown-mid)}
 #fileInput{display:none}
 
