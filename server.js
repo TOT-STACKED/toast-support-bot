@@ -299,8 +299,8 @@ tr:hover td{background:var(--cream)}
 </head>
 <body>
 <header>
-  <img class="header-icon" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Linkedin-profile%20(1).jpg" alt="">
-  <img class="header-wordmark" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Artboard%2025%20(3).png" alt="Stacked">
+  <img class="header-icon" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/The%20Bench%20by%20Stacked%20(1).png" alt="">
+  <img class="header-wordmark" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Stacked%20(3).svg" alt="Stacked">
   <span class="admin-badge">Admin</span>
 </header>
 
@@ -543,7 +543,7 @@ const server = http.createServer(async (req, res) => {
       // Direct HTTPS delete to bypass sbFetch header merging issues
       const https = require('https');
       const sbUrl = new URL(`${SUPABASE_URL}/rest/v1/documents?filename=eq.${encodeURIComponent(filename)}`);
-      await new Promise((resolve, reject) => {
+      const statusCode = await new Promise((resolve, reject) => {
         const req = https.request({
           hostname: sbUrl.hostname,
           path: sbUrl.pathname + sbUrl.search,
@@ -558,15 +558,22 @@ const server = http.createServer(async (req, res) => {
           let d = '';
           r.on('data', c => d += c);
           r.on('end', () => {
-            console.log(`[DELETE] Supabase status: ${r.statusCode}`, d.substring(0, 200));
+            console.log(`[DELETE] Supabase status: ${r.statusCode} body: ${d.substring(0, 200)}`);
             resolve(r.statusCode);
           });
         });
         req.on('error', reject);
         req.end();
       });
-      res.writeHead(200, {'Content-Type':'application/json'});
-      res.end(JSON.stringify({ok:true, deleted: filename}));
+      // 204 = deleted OK, 200 = also OK
+      if (statusCode === 204 || statusCode === 200) {
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ok:true, deleted: filename}));
+      } else {
+        console.error('[DELETE] Supabase rejected with status:', statusCode);
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ok:false, error:'Supabase returned ' + statusCode + ' - check RLS policies'}));
+      }
     } catch(e) {
       console.error('[DELETE] Error:', e);
       res.writeHead(500, {'Content-Type':'application/json'});
