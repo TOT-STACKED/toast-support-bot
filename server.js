@@ -223,7 +223,7 @@ const ADMIN_PAGE = `<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stacked Chat Admin</title>
-<link rel="icon" type="image/jpeg" href="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Linkedin-profile%20(1).jpg">
+<link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Stacked%20(3).svg">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -404,26 +404,26 @@ async function loadAnalytics(){
 
 function renderDocs(docs){
   const dl=document.getElementById('docList');
-  if(!docs||!docs.length){dl.innerHTML='<div class="empty">No documents uploaded yet.</div>';return;}
+  if(!docs||!docs.length){dl.innerHTML='<div class=\"empty\">No documents uploaded yet.</div>';return;}
   dl.innerHTML=docs.map(d=>`
-    <div class="doc-item" id="doc-${CSS.escape(d.filename)}">
-      <div class="doc-info">
-        <div class="doc-icon">📄</div>
+    <div class=\"doc-item\" data-filename=\"${esc(d.filename)}\">
+      <div class=\"doc-info\">
+        <div class=\"doc-icon\">📄</div>
         <div>
-          <div class="doc-name">${esc(d.filename)}</div>
-          <div class="doc-date">Uploaded ${new Date(d.created_at).toLocaleDateString('en-GB')}</div>
+          <div class=\"doc-name\">${esc(d.filename)}</div>
+          <div class=\"doc-date\">Uploaded ${new Date(d.created_at).toLocaleDateString('en-GB')}</div>
         </div>
       </div>
-      <div class="doc-actions">
-        <span class="badge indexed">Indexed</span>
-        <button class="btn-delete" onclick="deleteDoc(${JSON.stringify(d.filename)}, this)">🗑 Delete</button>
+      <div class=\"doc-actions\">
+        <span class=\"badge indexed\">Indexed</span>
+        <button class=\"btn-delete\" onclick=\"deleteDoc(${JSON.stringify(d.filename)}, this)\">🗑 Delete</button>
       </div>
     </div>
   `).join('');
 }
 
 async function deleteDoc(filename, btn){
-  if(!confirm('Delete "' + filename + '" from the knowledge base?\\n\\nThis cannot be undone.')) return;
+  if(!confirm('Delete "' + filename + '" from the knowledge base?')) return;
   btn.disabled = true;
   btn.textContent = 'Deleting…';
   try {
@@ -431,13 +431,11 @@ async function deleteDoc(filename, btn){
     const d = await r.json();
     if(d.ok){
       notify('✓ ' + filename + ' deleted', 'green');
-      // Remove from UI immediately
-      const row = document.getElementById('doc-' + CSS.escape(filename));
+      const row = btn.closest('.doc-item');
       if(row) row.remove();
-      // Reload stats count
       setTimeout(loadAnalytics, 500);
     } else {
-      notify('Delete failed — see console', 'red');
+      notify('Delete failed — check Render logs', 'red');
       btn.disabled = false;
       btn.textContent = '🗑 Delete';
     }
