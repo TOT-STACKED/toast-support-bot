@@ -406,21 +406,21 @@ async function loadAnalytics(){
 function renderDocs(docs){
   const dl=document.getElementById('docList');
   if(!docs||!docs.length){dl.innerHTML='<div class=\"empty\">No documents uploaded yet.</div>';return;}
-  dl.innerHTML=docs.map(d=>`
-    <div class=\"doc-item\" data-filename=\"${esc(d.filename)}\">
-      <div class=\"doc-info\">
-        <div class=\"doc-icon\">📄</div>
-        <div>
-          <div class=\"doc-name\">${esc(d.filename)}</div>
-          <div class=\"doc-date\">Uploaded ${new Date(d.created_at).toLocaleDateString('en-GB')}</div>
-        </div>
-      </div>
-      <div class=\"doc-actions\">
-        <span class=\"badge indexed\">Indexed</span>
-        <button class=\"btn-delete\" onclick=\"deleteDoc(${JSON.stringify(d.filename)}, this)\">🗑 Delete</button>
-      </div>
-    </div>
-  `).join('');
+  dl.innerHTML=docs.map(function(d){
+    var fn=esc(d.filename);
+    var date=new Date(d.created_at).toLocaleDateString('en-GB');
+    var jsonFn=JSON.stringify(d.filename);
+    return '<div class=\"doc-item\" data-filename=\"'+fn+'\">'
+      +'<div class=\"doc-info\">'
+      +'<div class=\"doc-icon\">📄</div>'
+      +'<div><div class=\"doc-name\">'+fn+'</div>'
+      +'<div class=\"doc-date\">Uploaded '+date+'</div></div>'
+      +'</div>'
+      +'<div class=\"doc-actions\">'
+      +'<span class=\"badge indexed\">Indexed</span>'
+      +'<button class=\"btn-delete\" onclick=\"deleteDoc('+jsonFn+', this)\">🗑 Delete</button>'
+      +'</div></div>';
+  }).join('');
 }
 
 async function deleteDoc(filename, btn){
