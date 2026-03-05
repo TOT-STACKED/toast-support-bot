@@ -1,4 +1,13 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+// ─── TENANT PAGES ──────────────────────────────────────────────────────────
+// Load Boxpark pages from separate HTML files
+const BOXPARK_CHAT = fs.readFileSync(path.join(__dirname, 'boxpark_chat.html'), 'utf8');
+const BOXPARK_ADMIN = fs.readFileSync(path.join(__dirname, 'boxpark_admin.html'), 'utf8');
+const MASTER_ADMIN = fs.readFileSync(path.join(__dirname, 'master_admin.html'), 'utf8');
+
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://yuzlfocqovwhqdpitvxj.supabase.co';
@@ -150,6 +159,46 @@ async function sbFetch(path, opts = {}) {
     if (body) req.write(body);
     req.end();
   });
+}
+
+async function getTenantAnalytics(tenant) {
+  try {
+    const enc = encodeURIComponent(tenant);
+    const [convsR, ticketsR, docsR] = await Promise.all([
+      sbFetch('/rest/v1/conversations?select=messages,created_at&tenant=eq.' + enc + '&order=created_at.desc&limit=200'),
+      sbFetch('/rest/v1/tickets?select=id,email,name,venue,issue,status,created_at&tenant=eq.' + enc + '&order=created_at.desc&limit=50'),
+      sbFetch('/rest/v1/documents?select=id,filename,created_at&tenant=eq.' + enc + '&order=created_at.desc&limit=100'),
+    ]);
+    const convs = Array.isArray(convsR.data) ? convsR.data : [];
+    const tickets = Array.isArray(ticketsR.data) ? ticketsR.data : [];
+    const docs = Array.isArray(docsR.data) ? docsR.data : [];
+    const allMessages = [];
+    convs.forEach(c => {
+      if (c.messages && Array.isArray(c.messages)) {
+        c.messages.filter(m => m.role === 'user').forEach(m => allMessages.push(m.content.toLowerCase()));
+      }
+    });
+    const topicKeywords = {
+      'EPOS / Till system': ['epos','till','pos','register','touchscreen','terminal crashed','system down'],
+      'Payment terminals': ['payment','card','contactless','worldpay','sumup','square','stripe','zettle'],
+      'WiFi / Network': ['wifi','wi-fi','internet','network','broadband','connectivity','offline'],
+      'Kitchen printers': ['kitchen','printer','kds','order not printing','print'],
+      'Login / Access': ['login','log in','password','pin','access','locked out'],
+      'Slow performance': ['slow','lagging','freezing','frozen','unresponsive'],
+    };
+    const topicCounts = {};
+    Object.keys(topicKeywords).forEach(topic => {
+      topicCounts[topic] = 0;
+      allMessages.forEach(msg => { if (topicKeywords[topic].some(kw => msg.includes(kw))) topicCounts[topic]++; });
+    });
+    const vendors = ['lightspeed','square','zonal','epos now','tevalis','worldpay','sumup','stripe','zettle','deputy','sevenrooms','opentable'];
+    const vendorCounts = {};
+    vendors.forEach(v => { vendorCounts[v] = allMessages.filter(m => m.includes(v)).length; });
+    const topTopics = Object.entries(topicCounts).sort((a,b)=>b[1]-a[1]).filter(([,c])=>c>0);
+    const topVendors = Object.entries(vendorCounts).sort((a,b)=>b[1]-a[1]).filter(([,c])=>c>0);
+    const uniqueDocs = [...new Map(docs.map(d=>[d.filename,d])).values()];
+    return { totalConvs:convs.length, totalMessages:allMessages.length, openTickets:tickets.filter(t=>t.status==='open').length, totalDocs:uniqueDocs.length, topTopics, topVendors, recentConvs:convs.slice(0,10), tickets, docs:uniqueDocs };
+  } catch(e) { return { error: e.message }; }
 }
 
 async function getAnalytics() {
@@ -334,6 +383,15 @@ tr:hover td{background:var(--cream)}
   </div>
 
   <div class="tab-panel" id="tab-documents">
+    <div class="card" style="margin-bottom:20px">
+      <h3>Add from URL</h3>
+      <p style="font-size:13px;color:var(--brown-mid);margin-bottom:16px">Paste any webpage — vendor help docs, Notion pages, your own site. We'll fetch and index the content automatically.</p>
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <input type="text" id="urlInput" placeholder="https://support.tevalis.com/article/..." style="flex:1;padding:12px 16px;border:1.5px solid var(--cream-dark);border-radius:12px;font-family:'DM Sans',sans-serif;font-size:14px;color:var(--brown);background:var(--cream);outline:none" onkeydown="if(event.key==='Enter')ingestUrl()">
+        <button onclick="ingestUrl()" id="ingestBtn" style="padding:12px 20px;background:var(--orange);color:#fff;border:none;border-radius:12px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">+ Add URL</button>
+      </div>
+      <div id="urlStatus" style="margin-top:10px;font-size:13px;display:none"></div>
+    </div>
     <div class="card">
       <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFiles(event)">
         <div class="drop-icon">📄</div>
@@ -490,6 +548,34 @@ function notify(msg,type=''){
   setTimeout(()=>n.className='notify',3500);
 }
 
+async function ingestUrl(){
+  const input=document.getElementById('urlInput');
+  const btn=document.getElementById('ingestBtn');
+  const status=document.getElementById('urlStatus');
+  const url=input.value.trim();
+  if(!url||!url.startsWith('http')){status.style.display='block';status.style.color='var(--red)';status.textContent='Please enter a valid URL starting with http:// or https://';return;}
+  btn.disabled=true;btn.textContent='Fetching…';
+  status.style.display='block';status.style.color='var(--brown-mid)';status.textContent='Fetching and indexing '+url+'…';
+  try{
+    const r=await fetch('/ingest-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    const d=await r.json();
+    if(d.ok){
+      status.style.color='var(--green)';
+      status.textContent='✓ Indexed '+d.chunks+' chunks from '+d.title+'';
+      input.value='';
+      notify('✓ URL indexed!','green');
+      setTimeout(loadAnalytics,1000);
+    } else {
+      status.style.color='var(--red)';
+      status.textContent='Failed: '+d.error;
+    }
+  }catch(e){
+    status.style.color='var(--red)';
+    status.textContent='Error: '+e.message;
+  }
+  btn.disabled=false;btn.textContent='+ Add URL';
+}
+
 loadAnalytics();
 </script>
 </body>
@@ -510,6 +596,11 @@ const server = http.createServer(async (req, res) => {
   if (url === '/health') {
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({status:'ok'})); return;
+  }
+
+  if (url === '/master' || url === '/master/') {
+    res.writeHead(200, {'Content-Type':'text/html'});
+    res.end(MASTER_ADMIN); return;
   }
 
   if (url === '/admin' || url === '/admin/') {
@@ -579,6 +670,84 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, {'Content-Type':'application/json'});
       res.end(JSON.stringify({ok:false, error:e.message}));
     }
+    return;
+  }
+
+  if (method === 'POST' && url === '/ingest-url') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { url: targetUrl } = JSON.parse(body);
+        if (!targetUrl || !targetUrl.startsWith('http')) {
+          res.writeHead(400, {'Content-Type':'application/json'});
+          res.end(JSON.stringify({ok:false, error:'Invalid URL'})); return;
+        }
+        console.log('[INGEST] Fetching:', targetUrl);
+
+        // Fetch the page
+        const https = require('https');
+        const http2 = require('http');
+        const urlObj = new URL(targetUrl);
+        const client = urlObj.protocol === 'https:' ? https : http2;
+
+        const rawHtml = await new Promise((resolve, reject) => {
+          const options = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method: 'GET',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; StackedBot/1.0)',
+              'Accept': 'text/html,application/xhtml+xml',
+            }
+          };
+          const r = client.request(options, (resp) => {
+            // Follow redirects
+            if (resp.statusCode >= 300 && resp.statusCode < 400 && resp.headers.location) {
+              resolve(new Promise((res2, rej2) => {
+                const redirectUrl = new URL(resp.headers.location, targetUrl);
+                const c2 = redirectUrl.protocol === 'https:' ? https : http2;
+                c2.get(redirectUrl.href, {headers:{'User-Agent':'Mozilla/5.0 (compatible; StackedBot/1.0)'}}, (r2) => {
+                  let d=''; r2.on('data', c=>d+=c); r2.on('end', ()=>res2(d));
+                }).on('error', rej2);
+              }));
+              return;
+            }
+            if (resp.statusCode !== 200) { reject(new Error('HTTP ' + resp.statusCode)); return; }
+            let d = '';
+            resp.on('data', c => d += c);
+            resp.on('end', () => resolve(d));
+          });
+          r.on('error', reject);
+          r.end();
+        });
+
+        // Strip HTML to clean text
+        const text = stripHtml(rawHtml);
+        const title = extractTitle(rawHtml) || urlObj.hostname + urlObj.pathname;
+
+        if (text.length < 100) {
+          res.writeHead(200, {'Content-Type':'application/json'});
+          res.end(JSON.stringify({ok:false, error:'Page returned too little content — it may require login or JavaScript'})); return;
+        }
+
+        console.log('[INGEST] Extracted', text.length, 'chars from:', title);
+
+        // Store as chunks using URL as filename
+        const filename = title.substring(0, 80) + ' [' + urlObj.hostname + ']';
+        const chunks = chunkText(text, filename);
+        for (const chunk of chunks) {
+          await sbFetch('/rest/v1/documents', {method:'POST', body:chunk});
+        }
+
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ok:true, chunks:chunks.length, title, filename}));
+      } catch(e) {
+        console.error('[INGEST] Error:', e.message);
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ok:false, error:e.message}));
+      }
+    });
     return;
   }
 
@@ -686,8 +855,139 @@ ${KNOWLEDGE_BASE}${docContext}`;
     return;
   }
 
+  // ─── BOXPARK TENANT ROUTES ────────────────────────────────────────
+  if (url === '/boxpark' || url === '/boxpark/') {
+    res.writeHead(200, {'Content-Type':'text/html'});
+    res.end(BOXPARK_CHAT); return;
+  }
+
+  if (url === '/boxpark/admin' || url === '/boxpark/admin/') {
+    res.writeHead(200, {'Content-Type':'text/html'});
+    res.end(BOXPARK_ADMIN); return;
+  }
+
+  if (url === '/boxpark/analytics') {
+    const data = await getTenantAnalytics('boxpark');
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify(data)); return;
+  }
+
+  if (method === 'POST' && url === '/boxpark/chat') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { message, history = [] } = JSON.parse(body);
+        let docContext = '';
+        try {
+          const docsR = await sbFetch('/rest/v1/documents?select=filename,content&tenant=eq.boxpark&limit=200');
+          if (Array.isArray(docsR.data) && docsR.data.length > 0) {
+            const msgLower = message.toLowerCase();
+            const relevant = docsR.data.filter(d => msgLower.split(' ').some(w => w.length > 3 && d.content.toLowerCase().includes(w))).slice(0, 4);
+            if (relevant.length > 0) {
+              docContext = '\n\n=== FROM BOXPARK KNOWLEDGE BASE ===\n' + relevant.map(d => '[' + d.filename + ']\n' + d.content.substring(0, 600)).join('\n\n');
+            }
+          }
+        } catch(e) {}
+        const systemPrompt = 'You are the Boxpark tech support assistant — a direct, no-nonsense AI support bot for Boxpark vendors across Shoreditch, Croydon, Wembley, and Liverpool Street.\n\nYour personality:\n- Street smart and efficient — vendors are busy, keep it short\n- Calm during service rushes\n- British English only\n\nBoxpark context:\n- Vendors share infrastructure across multiple Boxpark sites\n- Common setups: Square, SumUp, iZettle for payments; various EPOS systems\n- WiFi is site-managed — escalate connectivity issues to Boxpark ops team\n- Boxpark ops: ops@boxpark.co.uk / 020 3409 4850\n\nAlways:\n- Give numbered steps for troubleshooting\n- Mention vendor support numbers when relevant\n- Suggest a manual fallback if the fix will not work mid-service\n- End with "Hit Raise a ticket below if this has not sorted it" for complex issues' + (docContext ? '\n\nKNOWLEDGE BASE:' + docContext : '');
+        const messages = history.slice(-8).map(m => ({role:m.role, content:m.content}));
+        if (!messages.length || messages[messages.length-1].content !== message) messages.push({role:'user', content:message});
+        const https = require('https');
+        const apiBody = JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:1000, system:systemPrompt, messages});
+        const apiRes = await new Promise((resolve, reject) => {
+          const r = https.request({hostname:'api.anthropic.com', path:'/v1/messages', method:'POST', headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','Content-Length':Buffer.byteLength(apiBody)}}, (resp) => {
+            let d = ''; resp.on('data', c => d += c); resp.on('end', () => resolve(JSON.parse(d)));
+          });
+          r.on('error', reject); r.write(apiBody); r.end();
+        });
+        const reply = apiRes.content?.[0]?.text || 'Sorry, I could not get a response. Please try again.';
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({response:reply}));
+      } catch(e) {
+        res.writeHead(500, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({response:'Server error. Please try again in a moment.'}));
+      }
+    });
+    return;
+  }
+
+  if (method === 'POST' && url === '/boxpark/upload') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', async () => {
+      try {
+        const { filename, content } = JSON.parse(body);
+        const chunks = chunkText(content, filename).map(c => ({...c, tenant:'boxpark'}));
+        for (const chunk of chunks) await sbFetch('/rest/v1/documents', {method:'POST', body:chunk});
+        res.writeHead(200, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({ok:true, chunks:chunks.length}));
+      } catch(e) {
+        res.writeHead(500, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({error:e.message}));
+      }
+    });
+    return;
+  }
+
+  if (method === 'DELETE' && url.startsWith('/boxpark/documents')) {
+    try {
+      const params = new URL(url, 'http://localhost');
+      const filename = params.searchParams.get('filename');
+      if (!filename) { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:false,error:'No filename'})); return; }
+      const https = require('https');
+      const sbUrl = new URL(SUPABASE_URL + '/rest/v1/documents?filename=eq.' + encodeURIComponent(filename) + '&tenant=eq.boxpark');
+      const statusCode = await new Promise((resolve, reject) => {
+        const req2 = https.request({hostname:sbUrl.hostname, path:sbUrl.pathname+sbUrl.search, method:'DELETE', headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'}}, (r) => {
+          let d=''; r.on('data', c => d+=c); r.on('end', () => { console.log('[BOXPARK DELETE] status:', r.statusCode, d.substring(0,100)); resolve(r.statusCode); });
+        });
+        req2.on('error', reject); req2.end();
+      });
+      if (statusCode === 204 || statusCode === 200) {
+        res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:true, deleted:filename}));
+      } else {
+        res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:false, error:'Supabase returned '+statusCode}));
+      }
+    } catch(e) { res.writeHead(500, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:false,error:e.message})); }
+    return;
+  }
+
+  if (method === 'POST' && url.startsWith('/boxpark/ticket/') && url.endsWith('/close')) {
+    const id = url.split('/')[3];
+    await sbFetch('/rest/v1/tickets?id=eq.' + id, {method:'PATCH', body:{status:'closed'}});
+    res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:true})); return;
+  }
+
   res.writeHead(404); res.end('Not found');
 });
+
+function stripHtml(html) {
+  // Remove scripts, styles, nav, footer, header tags and their contents
+  let text = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, ' ')
+    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, ' ')
+    .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, ' ')
+    // Convert block elements to newlines for readability
+    .replace(/<\/?(p|div|h[1-6]|li|tr|br|section|article)[^>]*>/gi, '\n')
+    // Strip remaining tags
+    .replace(/<[^>]+>/g, ' ')
+    // Decode common HTML entities
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&[a-z]+;/gi, ' ')
+    // Collapse whitespace
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text;
+}
+
+function extractTitle(html) {
+  const m = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  return m ? m[1].trim().replace(/[^a-zA-Z0-9 \-_.,]/g, ' ').replace(/\s+/g,' ').trim() : null;
+}
 
 function chunkText(text, filename) {
   const chunkSize = 1200;
