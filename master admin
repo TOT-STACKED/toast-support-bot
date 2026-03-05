@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stacked — Master Admin</title>
+<link rel="icon" href="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Stacked%20(3).svg">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --cream:#ede8df;--cream-dark:#e0d9ce;
+  --orange:#f04e1a;--brown:#3a2e24;--brown-mid:#6b5744;
+  --white:#ffffff;--green:#2a9d5c;--red:#d64545;--blue:#2563eb;
+  --shadow:0 2px 16px rgba(58,46,36,0.10);
+  --shadow-lg:0 8px 32px rgba(58,46,36,0.15);
+}
+body{background:var(--cream);font-family:'DM Sans',sans-serif;color:var(--brown);min-height:100vh}
+header{background:var(--white);border-bottom:1px solid var(--cream-dark);padding:16px 32px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow)}
+.header-wordmark{height:28px;object-fit:contain}
+.admin-badge{background:var(--orange);color:#fff;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;letter-spacing:0.05em;text-transform:uppercase}
+.master-badge{background:var(--brown);color:#fff;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;letter-spacing:0.05em;text-transform:uppercase}
+.container{max-width:1300px;margin:0 auto;padding:32px 24px}
+.page-title{font-family:'Fraunces',serif;font-size:28px;font-weight:700;margin-bottom:6px}
+.page-sub{font-size:14px;color:var(--brown-mid);margin-bottom:32px}
+/* ── MASTER STATS ── */
+.master-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:36px}
+.stat{background:var(--white);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.stat-num{font-family:'Fraunces',serif;font-size:36px;font-weight:700;color:var(--orange)}
+.stat-label{font-size:13px;color:var(--brown-mid);margin-top:4px}
+/* ── CLIENT CARDS ── */
+.clients-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:24px;margin-bottom:36px}
+.client-card{background:var(--white);border-radius:20px;box-shadow:var(--shadow);overflow:hidden;transition:box-shadow 0.2s}
+.client-card:hover{box-shadow:var(--shadow-lg)}
+.client-header{padding:20px 24px 16px;border-bottom:1px solid var(--cream-dark);display:flex;align-items:center;justify-content:space-between}
+.client-name-row{display:flex;align-items:center;gap:10px}
+.client-dot{width:10px;height:10px;border-radius:50%;background:var(--green);flex-shrink:0}
+.client-dot.loading{background:var(--cream-dark)}
+.client-name{font-family:'Fraunces',serif;font-size:18px;font-weight:700}
+.client-slug{font-size:12px;color:var(--brown-mid);font-family:monospace;background:var(--cream);padding:2px 8px;border-radius:6px}
+.client-links{display:flex;gap:8px}
+.link-btn{font-size:12px;font-weight:600;padding:5px 12px;border-radius:8px;text-decoration:none;transition:opacity 0.15s;display:flex;align-items:center;gap:4px}
+.link-btn:hover{opacity:0.8}
+.link-btn.chat{background:var(--cream);color:var(--brown)}
+.link-btn.admin{background:var(--orange);color:#fff}
+.client-body{padding:20px 24px}
+.client-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.mini-stat{text-align:center}
+.mini-num{font-family:'Fraunces',serif;font-size:22px;font-weight:700;color:var(--orange)}
+.mini-label{font-size:11px;color:var(--brown-mid);margin-top:2px}
+.client-divider{height:1px;background:var(--cream-dark);margin-bottom:16px}
+.recent-title{font-size:12px;font-weight:600;color:var(--brown-mid);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px}
+.recent-item{font-size:13px;padding:6px 0;border-bottom:1px solid var(--cream);display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.recent-item:last-child{border-bottom:none}
+.recent-msg{color:var(--brown);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recent-time{color:var(--brown-mid);font-size:11px;flex-shrink:0}
+.badge{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600}
+.badge.open{background:#fff3cd;color:#856404}
+.badge.closed{background:#d1e7dd;color:#0a3622}
+.empty-card{color:var(--brown-mid);font-size:13px;text-align:center;padding:16px 0}
+/* ── STACKED CLIENT (default) ── */
+.client-card.stacked .client-header{background:var(--cream)}
+.client-card.stacked .mini-num{color:var(--orange)}
+/* ── BOXPARK CLIENT ── */
+.client-card.boxpark .client-header{background:#1e1e1e}
+.client-card.boxpark .client-name{color:#ffffff}
+.client-card.boxpark .client-slug{background:#2e2e2e;color:#aaa}
+.client-card.boxpark .client-dot{background:#E31E26}
+.client-card.boxpark .link-btn.admin{background:#E31E26}
+.client-card.boxpark .mini-num{color:#E31E26}
+/* ── RECENT TICKETS TABLE ── */
+.section-title{font-family:'Fraunces',serif;font-size:22px;margin-bottom:16px}
+.card{background:var(--white);border-radius:16px;padding:24px;box-shadow:var(--shadow);margin-bottom:24px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;padding:8px 12px;font-weight:600;color:var(--brown-mid);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;border-bottom:2px solid var(--cream-dark)}
+td{padding:10px 12px;border-bottom:1px solid var(--cream-dark);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--cream)}
+.tenant-pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:var(--cream-dark);color:var(--brown)}
+.tenant-pill.boxpark{background:#1e1e1e;color:#fff}
+.loading-shimmer{background:linear-gradient(90deg,var(--cream) 25%,var(--cream-dark) 50%,var(--cream) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:6px;height:20px;width:80%}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+</style>
+</head>
+<body>
+
+<header>
+  <img class="header-wordmark" src="https://raw.githubusercontent.com/TOT-STACKED/toast-support-bot/main/assets/Stacked%20(3).svg" alt="Stacked">
+  <span class="admin-badge">Admin</span>
+  <span class="master-badge">&#x2605; Master</span>
+</header>
+
+<div class="container">
+  <div class="page-title">All clients</div>
+  <div class="page-sub">Across all tenants — live data</div>
+
+  <!-- MASTER TOTALS -->
+  <div class="master-stats">
+    <div class="stat"><div class="stat-num" id="totalConvs"><div class="loading-shimmer"></div></div><div class="stat-label">Total conversations</div></div>
+    <div class="stat"><div class="stat-num" id="totalMsgs"><div class="loading-shimmer"></div></div><div class="stat-label">Total messages</div></div>
+    <div class="stat"><div class="stat-num" id="totalTickets"><div class="loading-shimmer"></div></div><div class="stat-label">Open tickets</div></div>
+    <div class="stat"><div class="stat-num" id="totalClients">2</div><div class="stat-label">Active clients</div></div>
+  </div>
+
+  <!-- CLIENT CARDS -->
+  <div class="clients-grid" id="clientsGrid">
+
+    <!-- STACKED (default) -->
+    <div class="client-card stacked">
+      <div class="client-header">
+        <div class="client-name-row">
+          <div class="client-dot loading" id="dot-stacked"></div>
+          <div class="client-name">Stacked Chat</div>
+          <span class="client-slug">/</span>
+        </div>
+        <div class="client-links">
+          <a class="link-btn chat" href="/" target="_blank">&#x1F4AC; Chat</a>
+          <a class="link-btn admin" href="/admin" target="_blank">&#x2699;&#xFE0F; Admin</a>
+        </div>
+      </div>
+      <div class="client-body">
+        <div class="client-stats">
+          <div class="mini-stat"><div class="mini-num" id="s-convs-stacked">&mdash;</div><div class="mini-label">Conversations</div></div>
+          <div class="mini-stat"><div class="mini-num" id="s-tickets-stacked">&mdash;</div><div class="mini-label">Open tickets</div></div>
+          <div class="mini-stat"><div class="mini-num" id="s-docs-stacked">&mdash;</div><div class="mini-label">Docs indexed</div></div>
+        </div>
+        <div class="client-divider"></div>
+        <div class="recent-title">Recent conversations</div>
+        <div id="recent-stacked"><div class="empty-card">Loading&hellip;</div></div>
+      </div>
+    </div>
+
+    <!-- BOXPARK -->
+    <div class="client-card boxpark">
+      <div class="client-header">
+        <div class="client-name-row">
+          <div class="client-dot loading" id="dot-boxpark"></div>
+          <div class="client-name">Boxpark</div>
+          <span class="client-slug">/boxpark</span>
+        </div>
+        <div class="client-links">
+          <a class="link-btn chat" href="/boxpark" target="_blank" style="background:#2e2e2e;color:#fff">&#x1F4AC; Chat</a>
+          <a class="link-btn admin" href="/boxpark/admin" target="_blank">&#x2699;&#xFE0F; Admin</a>
+        </div>
+      </div>
+      <div class="client-body">
+        <div class="client-stats">
+          <div class="mini-stat"><div class="mini-num" id="s-convs-boxpark">&mdash;</div><div class="mini-label">Conversations</div></div>
+          <div class="mini-stat"><div class="mini-num" id="s-tickets-boxpark">&mdash;</div><div class="mini-label">Open tickets</div></div>
+          <div class="mini-stat"><div class="mini-num" id="s-docs-boxpark">&mdash;</div><div class="mini-label">Docs indexed</div></div>
+        </div>
+        <div class="client-divider"></div>
+        <div class="recent-title" style="color:#888">Recent conversations</div>
+        <div id="recent-boxpark"><div class="empty-card" style="color:#666">Loading&hellip;</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ALL OPEN TICKETS -->
+  <div class="section-title">All open tickets</div>
+  <div class="card">
+    <div id="allTickets"><div class="empty-card">Loading&hellip;</div></div>
+  </div>
+
+</div>
+
+<script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+const CLIENTS = [
+  {slug:'stacked', label:'Stacked Chat', analyticsUrl:'/analytics'},
+  {slug:'boxpark', label:'Boxpark',      analyticsUrl:'/boxpark/analytics'},
+];
+
+let allData = {};
+
+async function loadAll(){
+  const results = await Promise.all(CLIENTS.map(c => fetch(c.analyticsUrl).then(r=>r.json()).then(d=>({slug:c.slug,data:d})).catch(e=>({slug:c.slug,data:{error:e.message}}))));
+
+  let totalConvs=0, totalMsgs=0, totalTickets=0;
+  const allTickets = [];
+
+  results.forEach(({slug, data}) => {
+    if (data.error) { document.getElementById('dot-'+slug).style.background='var(--red)'; return; }
+    allData[slug] = data;
+    document.getElementById('dot-'+slug).classList.remove('loading');
+
+    document.getElementById('s-convs-'+slug).textContent = data.totalConvs || 0;
+    document.getElementById('s-tickets-'+slug).textContent = data.openTickets || 0;
+    document.getElementById('s-docs-'+slug).textContent = data.totalDocs || 0;
+
+    totalConvs += data.totalConvs || 0;
+    totalMsgs  += data.totalMessages || 0;
+    totalTickets += data.openTickets || 0;
+
+    // Recent convs
+    const recentEl = document.getElementById('recent-'+slug);
+    const convs = (data.recentConvs||[]).slice(0,4);
+    if (!convs.length) { recentEl.innerHTML='<div class="empty-card">No conversations yet.</div>'; }
+    else {
+      recentEl.innerHTML = convs.map(c => {
+        const first = (c.messages||[]).find(m=>m.role==='user');
+        const d = new Date(c.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+        return '<div class="recent-item"><span class="recent-msg">'+esc((first?.content||'').substring(0,55))+'</span><span class="recent-time">'+d+'</span></div>';
+      }).join('');
+    }
+
+    // Collect open tickets
+    (data.tickets||[]).filter(t=>t.status==='open').forEach(t => allTickets.push({...t, _client:slug}));
+  });
+
+  document.getElementById('totalConvs').textContent = totalConvs;
+  document.getElementById('totalMsgs').textContent = totalMsgs;
+  document.getElementById('totalTickets').textContent = totalTickets;
+
+  // All open tickets table
+  const tt = document.getElementById('allTickets');
+  if (!allTickets.length) { tt.innerHTML='<div class="empty-card">No open tickets across any client. &#x1F389;</div>'; }
+  else {
+    allTickets.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    tt.innerHTML='<table><thead><tr><th>Client</th><th>Name</th><th>Venue</th><th>Issue</th><th>Date</th></tr></thead><tbody>'
+      + allTickets.map(t =>
+        '<tr>'
+        +'<td><span class="tenant-pill '+t._client+'">'+esc(t._client)+'</span></td>'
+        +'<td><strong>'+esc(t.name||'')+'</strong><br><small>'+esc(t.email||'')+'</small></td>'
+        +'<td>'+esc(t.venue||'')+'</td>'
+        +'<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.issue||'')+'</td>'
+        +'<td>'+new Date(t.created_at).toLocaleDateString('en-GB')+'</td>'
+        +'</tr>'
+      ).join('')
+      +'</tbody></table>';
+  }
+}
+
+loadAll();
+// Auto-refresh every 60 seconds
+setInterval(loadAll, 60000);
+</script>
+</body>
+</html>
