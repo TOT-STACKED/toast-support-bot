@@ -162,7 +162,7 @@ async function getTenantAnalytics(tenant) {
     const [convsR, ticketsR, docsR] = await Promise.all([
       sbFetch('/rest/v1/conversations?select=messages,created_at&tenant=eq.' + enc + '&order=created_at.desc&limit=200'),
       sbFetch('/rest/v1/tickets?select=id,email,name,venue,issue,status,created_at&tenant=eq.' + enc + '&order=created_at.desc&limit=50'),
-      sbFetch('/rest/v1/documents?select=id,filename,created_at&tenant=eq.' + enc + '&order=created_at.desc&limit=100'),
+      sbFetch('/rest/v1/documents?select=filename,created_at&tenant=eq.' + enc + '&order=created_at.desc&limit=1000'),
     ]);
     const convs = Array.isArray(convsR.data) ? convsR.data : [];
     const tickets = Array.isArray(ticketsR.data) ? ticketsR.data : [];
@@ -201,7 +201,7 @@ async function getAnalytics() {
     const [convsR, ticketsR, docsR] = await Promise.all([
       sbFetch('/rest/v1/conversations?select=messages,created_at&order=created_at.desc&limit=200'),
       sbFetch('/rest/v1/tickets?select=id,email,name,venue,issue,status,created_at&order=created_at.desc&limit=50'),
-      sbFetch('/rest/v1/documents?select=id,filename,created_at&order=created_at.desc&limit=100'),
+      sbFetch('/rest/v1/documents?select=filename,created_at&order=created_at.desc&limit=1000'),
     ]);
 
     const convs = Array.isArray(convsR.data) ? convsR.data : [];
