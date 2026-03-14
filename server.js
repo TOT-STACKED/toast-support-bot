@@ -627,13 +627,17 @@ ${KNOWLEDGE_BASE}${docContext}${venueContext}`;
           const vidsR = await sbFetch('/rest/v1/videos?select=*&order=created_at.desc&limit=100');
           if (Array.isArray(vidsR.data) && vidsR.data.length > 0) {
             const searchText = (message + ' ' + rawReply).toLowerCase();
-            const asksForVideo = /video|watch|tutorial|show me|how to|walkthrough|demo|guide/i.test(message);
-            relevantVideos = vidsR.data.filter((v, i) => {
+            const explicitly = /video|watch|tutorial|show me|how to|walkthrough|demo|guide/i.test(message);
+            const msgWords = message.toLowerCase().split(/\s+/).filter(w=>w.length>3);
+            const scored = vidsR.data.map(v => {
               const t = ((v.title||'') + ' ' + (v.description||'')).toLowerCase();
-              const words = searchText.split(/\s+/).filter(w=>w.length>3);
-              const keywordMatch = words.some(w=>t.includes(w));
-              return keywordMatch || (asksForVideo && i === 0);
-            }).slice(0, 2);
+              const hits = msgWords.filter(w=>t.includes(w)).length;
+              return { v, hits };
+            });
+            const best = scored.sort((a,b)=>b.hits-a.hits)[0];
+            if (best && (explicitly ? best.hits >= 1 : best.hits >= 2)) {
+              relevantVideos = [best.v];
+            }
           }
         } catch(e) {}
         res.writeHead(200, {'Content-Type':'application/json'});
